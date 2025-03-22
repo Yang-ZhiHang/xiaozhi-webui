@@ -1,0 +1,21 @@
+@import './base.css';
+
+#app {
+  max-width: 1280px;
+  margin: 0 auto;
+  font-weight: normal;
+}
+
+input {
+  padding: 0.6rem 0.8rem;
+  outline: none;
+  border: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  transition: all 0.1s ease-in-out;
+
+  &:focus {
+    border-color: #4f46e5;
+    box-shadow: #4e46e546 0 0 0 2px;
+  }
+}
