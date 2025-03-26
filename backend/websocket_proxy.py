@@ -128,13 +128,22 @@ class AudioProcessor:
 
 
 class WebSocketProxy:
-    def __init__(self):
-        self.device_id = get_mac_address()
-        self.enable_token = os.getenv("ENABLE_TOKEN", "true").lower() == "true"
-        self.token = os.getenv("DEVICE_TOKEN", "123")
-        self.websocket_url = os.getenv("WS_URL")
-        self.proxy_host = os.getenv("PROXY_HOST", "localhost")
-        self.proxy_port = os.getenv("PROXY_PORT", "5000")
+    def __init__(
+        self,
+        device_id: str,
+        websocket_url: str,
+        proxy_host: str,
+        proxy_port: str,
+        token_enable: bool,
+        token: str,
+    ):
+        self.device_id = device_id
+        self.websocket_url = websocket_url
+        self.proxy_host = proxy_host
+        self.proxy_port = proxy_port
+        self.token_enable = token_enable
+        self.token = token
+
         self.audio_processor = AudioProcessor(buffer_size=960)
         self.decoder = opuslib.Decoder(16000, 1)  # 保持单个解码器实例即可
         self.audio_buffer = bytearray()  # 用于存储解码后的音频数据
@@ -147,7 +156,7 @@ class WebSocketProxy:
             "Client-Id": "15f426f7-b0dd-42a1-8445-64c6f720c1c4",
             "Protocol-Version": "1",
         }
-        if self.enable_token:
+        if self.token_enable:
             self.headers["Authorization"] = f"Bearer {self.token}"
 
     def create_wav_header(self, total_samples):
@@ -332,22 +341,20 @@ class WebSocketProxy:
                 if isinstance(message, str):
                     await server_ws.send(message)
                 else:
-                    print("[WebsocketProxy][handle_client_messages] Message is not a string.")
+                    print(
+                        "[WebsocketProxy][handle_client_messages] Message is not a string."
+                    )
         except Exception as e:
-            print(f"[WebsocketProxy][handle_client_messages] Client message handling error: {e}")
+            print(
+                f"[WebsocketProxy][handle_client_messages] Client message handling error: {e}"
+            )
 
     async def main(self):
         """启动代理服务器"""
-        token = os.getenv("DEVICE_TOKEN", "123")
-        print(f"Starting proxy server on {self.proxy_host}:{self.proxy_port}")
-        print(f"Device ID: {self.device_id}")
-        print(f"Token: {token}")
-        print(f"Target WS URL: {self.websocket_url}")
-
         async with websockets.serve(
             self.proxy_handler, self.proxy_host, self.proxy_port
         ):
-            await asyncio.Future()  # 运行直到被取消
+            await asyncio.Future()
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from "vue";
 
 const configStore = useConfigStore();
-const deviceId: string = "d0:39:57:4b:59:8c";
+const deviceId = ref<string>("00:00:00:00:00:00");
 
 // ---------- 输入框相关 start ----------
 const chatContainer = ref<HTMLDivElement | null>(null);
@@ -102,7 +102,7 @@ function sendMessage() {
     ws.send(textMessage);
     messageInput.value!.innerText = "";
     // appendMessage("user", message);
-  } else if (!configStore.sessionID) {
+  } else if (!configStore.getSessionID()) {
     console.error("[App][sendMessage] No session ID available");
     appendMessage("server", "机器人：抱歉，小智正在忙，请待会再聊吧。");
   }
@@ -127,18 +127,23 @@ const connectionStateText = ref<string>("离线");
  */
 const connect = (): void => {
   if (!connectionState.value) {
-    console.error("[App][connect] Connection status element not found.");
-    return;
+    try {
+      connectionState.value = document.querySelector(".connection-state");
+    } catch (error: unknown) {
+      console.error(
+        "[App][connect] Error setting connection status to disconnected:",
+        error
+      );
+    }
   }
 
-  const WSProxyURL = configStore.WSProxyURL;
+  const WSProxyURL = configStore.getWSProxyURL();
   console.log("Connecting to:", WSProxyURL);
   ws = new WebSocket(WSProxyURL);
 
   // WebSocket 保持连接状态时的回调函数
   ws.onopen = function () {
     console.log("[App][ws.onopen] Connected to WebSocket server");
-    configStore.isConnected = true;
 
     try {
       connectionState.value!.classList.remove("error");
@@ -173,8 +178,7 @@ const connect = (): void => {
     console.log(
       `[App][ws.onclose] WebSocket closed: ${event.code} ${event.reason}`
     );
-    configStore.isConnected = false;
-    configStore.sessionID = "";
+    configStore.setSessionID("");
 
     try {
       connectionState.value!.classList.remove("error");
@@ -188,8 +192,8 @@ const connect = (): void => {
       );
     }
 
-    // 3秒后重连
-    setTimeout(connect, 5000);
+    // 3 秒后重连
+    setTimeout(connect, 3000);
   };
 
   // WebSocket 错误时的回调函数
@@ -230,8 +234,8 @@ const connect = (): void => {
 
         // WebSocket 握手成功，获取 session_id
         if (data.type === "hello") {
-          configStore.sessionID = data.session_id;
-          console.log("[App][ws.onmessage] Session ID:", configStore.sessionID);
+          configStore.setSessionID(data.session_id);
+          console.log("[App][ws.onmessage] Session ID:", data.session_id);
         }
         // 客户端发送的语音在服务端的识别结果
         else if (data.type === "stt") {
@@ -287,18 +291,19 @@ const showSettingPanel = () => {
 // ---------- 设置面板相关 end --------------
 
 // ---------- 语音处理相关 start ------------
+declare global {
+  interface Window {
+    AudioContext: typeof AudioContext;
+    webkitAudioContext: typeof AudioContext;
+  }
+}
 const SPEAKING = ref<boolean>(false);
-
-// ========== Web Audio API 初始化 start ==========
 const audioContext = new (window.AudioContext || window.webkitAudioContext)();
 const gainNode = audioContext.createGain();
-gainNode.connect(audioContext.destination);
 const audioQueue = ref<AudioBuffer[]>([]);
-let currentTime = 0; // 音频调度时间
-
-// 暂停音频上下文避免自动播放策略限制
+let currentTime = 0;
+gainNode.connect(audioContext.destination);
 audioContext.suspend();
-// ========== Web Audio API 初始化 end ==========
 
 /**
  * 播放音频队列中的下一个音频
@@ -312,10 +317,10 @@ const playNextAudio = (): void => {
     return;
   }
 
-  const nextAudioBlob = audioQueue.value.shift();
-  if (nextAudioBlob) {
+  const nextAudioBuffer: AudioBuffer | undefined = audioQueue.value.shift();
+  if (nextAudioBuffer) {
     SPEAKING.value = true;
-    playBlob(nextAudioBlob);
+    playBlob(nextAudioBuffer);
   }
 };
 
@@ -360,8 +365,10 @@ const playBlob = async (audioBuffer: AudioBuffer) => {
  */
 const enqueueAudio = async (blob: Blob): Promise<void> => {
   try {
-    const arrayBuffer = await blob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    const arrayBuffer: ArrayBuffer = await blob.arrayBuffer();
+    const audioBuffer: AudioBuffer = await audioContext.decodeAudioData(
+      arrayBuffer
+    );
     audioQueue.value.push(audioBuffer);
     if (!SPEAKING.value) {
       playNextAudio();
@@ -392,6 +399,22 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
 // };
 
 // ---------- 语音处理相关 end --------------
+
+// ---------- 设置面板 start ------------
+const WSURL = ref<HTMLInputElement | null>(null);
+const WSProxyURL = ref<HTMLInputElement | null>(null);
+const tokenEnable = ref<boolean>(false);
+const token = ref<HTMLInputElement | null>(null);
+
+onMounted(async () => {
+  await configStore.init();
+  deviceId.value = configStore.getDeviceID();
+  WSURL.value!.value = configStore.getWSURL();
+  WSProxyURL.value!.value = configStore.getWSProxyURL();
+  token.value!.value = configStore.getToken();
+});
+
+// ---------- 设置面板 end --------------
 </script>
 
 <template>
@@ -485,11 +508,16 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
           <input
             type="text"
             placeholder="例如: wss://api.domain.cn/xiaozhi/v1/"
+            ref="WSURL"
           />
         </div>
         <div style="display: flex; flex-direction: column">
           <label>本地代理地址</label>
-          <input type="text" placeholder="例如: ws://localhost:5000" />
+          <input
+            type="text"
+            placeholder="例如: ws://localhost:5000"
+            ref="WSProxyURL"
+          />
         </div>
         <div style="display: flex; flex-direction: column">
           <div
@@ -501,11 +529,20 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
           >
             <label>Token 设置</label>
             <label class="toggle-switch">
-              <input type="checkbox" />
+              <input
+                type="checkbox"
+                :checked="tokenEnable"
+                @click="tokenEnable = !tokenEnable"
+              />
               <span class="toggle-slider"></span>
             </label>
           </div>
-          <input type="text" placeholder="开启后将在连接时携带 Token" />
+          <input
+            type="text"
+            placeholder="开启后将在连接时携带 Token"
+            ref="token"
+            :disabled="!tokenEnable"
+          />
         </div>
       </div>
       <div class="bottom-buttons">

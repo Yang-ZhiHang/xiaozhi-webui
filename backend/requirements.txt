@@ -2,3 +2,5 @@ websockets==12.0
 opuslib==3.0.1
 numpy==1.26.4
 python-dotenv==1.0.0
+flask==3.0.2
+flask-cors==5.0.0
