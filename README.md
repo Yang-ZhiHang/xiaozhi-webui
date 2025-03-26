@@ -38,13 +38,7 @@ cd frontend/xiaozhi-webui
 npm install
 ```
 
-2. 配置环境变量
-
-```bash
-cp .env.example .env
-```
-
-3. 启动项目
+2. 启动项目
 
 ```bash
 npm run dev
