@@ -1,16 +1,15 @@
 # xiaozhi-webui
 
-
 ## 项目简介
 xiaozhi-webui 是一个使用 Python + Vue3 实现的小智语音 Web 端，旨在通过代码学习和在没有硬件条件下体验 AI 小智的对话功能。
 
 本仓库是基于 [xiaozhi-web-client](https://github.com/TOM88812/xiaozhi-web-client) 使用 Vue3 重构的
 
-## 环境要求
-- Python 3.12.0
-- Windows
+## 功能特点
 
-## 演示
+- **文字交互**：支持语音输入与识别，实现智能人机交互。  
+
+## 项目展示
 
 <div style="display: flex; justify-content: space-around; margin-bottom: 20px;">
     <img src="./images/离线.jpg" alt="演示图片" style="width: 45%;">
@@ -22,10 +21,53 @@ xiaozhi-webui 是一个使用 Python + Vue3 实现的小智语音 Web 端，旨�
     <img src="./images/设置面板.jpg" alt="演示图片" style="width: 45%;">
 </div>
 
+## 环境要求
+- Python 3.12.0
+- Windows
 
-## 功能特点
+## 快速开始
 
-- **文字交互**：支持语音输入与识别，实现智能人机交互。  
+### 前端
+
+1. 安装依赖
+
+```bash
+cd frontend/xiaozhi-webui
+npm install
+```
+
+2. 配置环境变量
+
+```bash
+cp .env.example .env
+```
+
+3. 启动项目
+
+```bash
+npm run dev
+```
+
+### 后端
+
+1. 安装依赖
+
+```bash
+cd backend
+pip install -r requirements.txt
+```
+
+2. 配置环境变量
+
+```bash
+cp .env.example .env
+```
+
+3. 启动项目
+
+```bash
+python app.py
+```
 
 ## 状态流转图
 
@@ -87,6 +129,7 @@ xiaozhi-webui 是一个使用 Python + Vue3 实现的小智语音 Web 端，旨�
 欢迎提交 Issues 和 Pull Requests！
 
 ## 感谢以下开源人员-排名不分前后
+
 [Huang-junsen](https://github.com/Huang-junsen)
 
 [TOM88812](https://github.com/TOM88812)
