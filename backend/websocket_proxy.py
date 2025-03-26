@@ -1,6 +1,5 @@
 import asyncio
 import websockets
-import os
 import json
 import uuid
 import wave
@@ -355,8 +354,3 @@ class WebSocketProxy:
             self.proxy_handler, self.proxy_host, self.proxy_port
         ):
             await asyncio.Future()
-
-
-if __name__ == "__main__":
-    proxy = WebSocketProxy()
-    asyncio.run(proxy.main())

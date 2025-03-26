@@ -21,6 +21,17 @@ DEFAULT_CONFIG = {
 }
 
 
+def get_mac_address():
+
+    # 获取设备的唯一标识符并转换为十六进制字符串
+    mac_hex = uuid.UUID(int=uuid.getnode()).hex[-12:]
+
+    # 以 MAC 地址的形式输出 mac_hex
+    mac_address = ":".join([mac_hex[i : i + 2] for i in range(0, 12, 2)])
+
+    return mac_address
+
+
 def get_env():
     """确保配置文件存在，否则创建并使用默认配置"""
     config_path = os.path.join(os.path.dirname(__file__), "config", "config.json")
@@ -33,17 +44,6 @@ def get_env():
     with open(config_path, "r") as f:
         config = json.load(f)
     return config
-
-
-def get_mac_address():
-
-    # 获取设备的唯一标识符并转换为十六进制字符串
-    mac_hex = uuid.UUID(int=uuid.getnode()).hex[-12:]
-
-    # 以 MAC 地址的形式输出 mac_hex
-    mac_address = ":".join([mac_hex[i : i + 2] for i in range(0, 12, 2)])
-
-    return mac_address
 
 
 # ========== 全局环境变量 start ==========
@@ -94,19 +94,18 @@ CORS(app)
 
 @app.route("/config", methods=["GET"])
 def get_config():
-    return (
-        jsonify(
-            {
-                "ws_url": WS_URL,
-                "ws_proxy_url": f"{PROXY_HOST}:{PROXY_PORT}",
-                "token_enable": TOKEN_ENABLE,
-                "token": DEVICE_TOKEN,
-                "device_id": DEVICE_ID,
-                "code": 0,
-            }
-        ),
-        200,
-    )
+    """获取配置信息"""
+    data = {
+        "ws_url": WS_URL,
+        "ws_proxy_url": f"ws://{PROXY_HOST}:{PROXY_PORT}",
+        "token_enable": TOKEN_ENABLE,
+        "device_id": DEVICE_ID,
+        "code": 0,
+    }
+    if TOKEN_ENABLE:
+        data["token"] = DEVICE_TOKEN
+
+    return jsonify(data), 200
 
 
 if __name__ == "__main__":

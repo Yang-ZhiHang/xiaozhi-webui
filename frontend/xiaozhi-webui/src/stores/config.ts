@@ -54,7 +54,6 @@ export const useConfigStore = defineStore('config', () => {
     try {
       const response = await fetch("http://localhost:8081/config")
       const data = await response.json()
-      // console.log("[useConfigStore][init] ", data)
 
       if (data.ws_proxy_url) {
         setWSProxyURL(data.ws_proxy_url)

@@ -122,13 +122,14 @@ let ws: WebSocket;
 const isMounted = ref<boolean>(false);
 const connectionState = ref<HTMLDivElement | null>(null);
 const connectionStateText = ref<string>("离线");
+
 /**
  * 连接 WebSocket 服务器
  */
 const connect = (): void => {
   if (!connectionState.value) {
     try {
-      connectionState.value = document.querySelector(".connection-state");
+      connectionState.value = document.querySelector(".connection-state") as HTMLDivElement;
     } catch (error: unknown) {
       console.error(
         "[App][connect] Error setting connection status to disconnected:",
@@ -138,7 +139,7 @@ const connect = (): void => {
   }
 
   const WSProxyURL = configStore.getWSProxyURL();
-  console.log("Connecting to:", WSProxyURL);
+  console.log("[App][connect] Connecting to:", WSProxyURL);
   ws = new WebSocket(WSProxyURL);
 
   // WebSocket 保持连接状态时的回调函数
@@ -191,7 +192,7 @@ const connect = (): void => {
         error
       );
     }
-
+    
     // 3 秒后重连
     setTimeout(connect, 3000);
   };
@@ -377,27 +378,6 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
     console.error("[App][enqueueAudio] ", e);
   }
 };
-
-// /**
-//  * 播放服务器传来的 blob 语音文件
-//  * @param {Blob} blob Blob 文件
-//  */
-// const playBlob = (blob: Blob) => {
-//   audioPlayer.src = URL.createObjectURL(blob);
-//   audioPlayer.play();
-// };
-
-// /**
-//  * 将 Wav 音频添加到队列中
-//  * @param {Blob} blob Wav 音频文件
-//  */
-// const enqueueAudio = async (blob: Blob): Promise<void> => {
-//   audioQueue.value.push(blob);
-//   if (!SPEAKING.value) {
-//     playNextAudio();
-//   }
-// };
-
 // ---------- 语音处理相关 end --------------
 
 // ---------- 设置面板 start ------------
@@ -411,9 +391,9 @@ onMounted(async () => {
   deviceId.value = configStore.getDeviceID();
   WSURL.value!.value = configStore.getWSURL();
   WSProxyURL.value!.value = configStore.getWSProxyURL();
+  tokenEnable.value = configStore.getTokenEnable();
   token.value!.value = configStore.getToken();
 });
-
 // ---------- 设置面板 end --------------
 </script>
 
