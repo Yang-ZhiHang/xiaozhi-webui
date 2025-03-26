@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
+import { ref, onMounted, onUnmounted, nextTick } from "vue";
 
 const configStore = useConfigStore();
 const deviceId: string = "d0:39:57:4b:59:8c";
@@ -119,12 +119,14 @@ const handleKeyPress = (event: KeyboardEvent) => {
 // ---------- WebSocket 连接相关 start ----------
 import { useConfigStore } from "./stores/config";
 let ws: WebSocket;
-const connectionStatus = ref<HTMLDivElement | null>(null);
+const isMounted = ref<boolean>(false);
+const connectionState = ref<HTMLDivElement | null>(null);
+const connectionStateText = ref<string>("离线");
 /**
  * 连接 WebSocket 服务器
  */
 const connect = (): void => {
-  if (!connectionStatus.value) {
+  if (!connectionState.value) {
     console.error("[App][connect] Connection status element not found.");
     return;
   }
@@ -139,10 +141,10 @@ const connect = (): void => {
     configStore.isConnected = true;
 
     try {
-      connectionStatus.value!.classList.remove("error");
-      connectionStatus.value!.classList.add("connected");
-      connectionStatus.value!.classList.remove("disconnected");
-      connectionStatus.value!.textContent = "在线";
+      connectionState.value!.classList.remove("error");
+      connectionState.value!.classList.add("connected");
+      connectionState.value!.classList.remove("disconnected");
+      connectionStateText.value = "在线";
     } catch (error: unknown) {
       console.error(
         "[App][ws.onopen] Error setting connection status to connected:",
@@ -175,10 +177,10 @@ const connect = (): void => {
     configStore.sessionID = "";
 
     try {
-      connectionStatus.value!.classList.remove("error");
-      connectionStatus.value!.classList.add("disconnected");
-      connectionStatus.value!.classList.remove("connected");
-      connectionStatus.value!.textContent = "离线";
+      connectionState.value!.classList.remove("error");
+      connectionState.value!.classList.add("disconnected");
+      connectionState.value!.classList.remove("connected");
+      connectionStateText.value = "离线";
     } catch (error: unknown) {
       console.error(
         "[App][ws.onclose] Error setting connection status to disconnected:",
@@ -195,10 +197,10 @@ const connect = (): void => {
     console.error("[App][ws.onerror] WebSocket error:", error);
 
     try {
-      connectionStatus.value!.classList.remove("disconnected");
-      connectionStatus.value!.classList.remove("connected");
-      connectionStatus.value!.classList.add("error");
-      connectionStatus.value!.textContent = "错误";
+      connectionState.value!.classList.remove("disconnected");
+      connectionState.value!.classList.remove("connected");
+      connectionState.value!.classList.add("error");
+      connectionStateText.value = "错误";
     } catch (error: unknown) {
       console.error(
         "[App][ws.onerror] Error setting connection status to error:",
@@ -224,7 +226,7 @@ const connect = (): void => {
       // 处理文本消息
       else {
         const data = JSON.parse(event.data);
-        console.log("[App][ws.onmessage] Text message received:", data);
+        // console.log("[App][ws.onmessage] Text message received:", data);
 
         // WebSocket 握手成功，获取 session_id
         if (data.type === "hello") {
@@ -260,7 +262,16 @@ const connect = (): void => {
 };
 
 onMounted(() => {
-  connect();
+  isMounted.value = true;
+
+  // 等待 DOM 渲染完成后再连接
+  nextTick(() => {
+    connect();
+  });
+});
+
+onUnmounted(() => {
+  isMounted.value = false;
 });
 // ---------- WebSocket 连接相关 end ------------
 
@@ -276,25 +287,24 @@ const showSettingPanel = () => {
 // ---------- 设置面板相关 end --------------
 
 // ---------- 语音处理相关 start ------------
-// 是否正在说话
 const SPEAKING = ref<boolean>(false);
 
-// 初始化音频播放器
-const audioPlayer = new Audio();
-audioPlayer.onended = () => {
-  SPEAKING.value = false;
-  URL.revokeObjectURL(audioPlayer.src);
-  playNextAudio();
-};
+// ========== Web Audio API 初始化 start ==========
+const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+const gainNode = audioContext.createGain();
+gainNode.connect(audioContext.destination);
+const audioQueue = ref<AudioBuffer[]>([]);
+let currentTime = 0; // 音频调度时间
 
-// 音频队列
-const audioQueue = ref<Blob[]>([]);
+// 暂停音频上下文避免自动播放策略限制
+audioContext.suspend();
+// ========== Web Audio API 初始化 end ==========
 
 /**
  * 播放音频队列中的下一个音频
  */
 const playNextAudio = (): void => {
-  console.log("[App][playNextAudio] Audio List:", audioQueue.value);
+  // console.log("[App][playNextAudio] Audio List:", audioQueue.value);
   if (SPEAKING.value) {
     return;
   }
@@ -310,24 +320,76 @@ const playNextAudio = (): void => {
 };
 
 /**
- * 播放服务器传来的 blob 语音文件
- * @param {Blob} blob Blob 文件
+ * 播放音频列表中的 AudioBuffer 语音文件
+ * @param {AudioBuffer} audioBuffer 解码后的音频数据
  */
-const playBlob = (blob: Blob) => {
-  audioPlayer.src = URL.createObjectURL(blob);
-  audioPlayer.play();
+const playBlob = async (audioBuffer: AudioBuffer) => {
+  try {
+    // 恢复音频上下文（需要用户交互后调用）
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+
+    // 创建播放节点
+    const source = audioContext.createBufferSource();
+    source.buffer = audioBuffer;
+    source.connect(gainNode);
+
+    // 计算精确播放时间
+    if (currentTime < audioContext.currentTime) {
+      currentTime = audioContext.currentTime;
+    }
+
+    // 调度播放
+    source.start(currentTime);
+    currentTime += audioBuffer.duration;
+
+    // 播放结束处理
+    source.onended = () => {
+      SPEAKING.value = false;
+      playNextAudio();
+    };
+  } catch (e) {
+    console.error("[App][playBlob] 音频解码失败:", e);
+  }
 };
 
 /**
- * 将 Wav 音频添加到队列中
- * @param {Blob} blob Wav 音频文件
+ * 将 Wave 音频解码后添加到队列中
+ * @param {Blob} blob Wave 音频文件
  */
 const enqueueAudio = async (blob: Blob): Promise<void> => {
-  audioQueue.value.push(blob);
-  if (!SPEAKING.value) {
-    playNextAudio();
+  try {
+    const arrayBuffer = await blob.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    audioQueue.value.push(audioBuffer);
+    if (!SPEAKING.value) {
+      playNextAudio();
+    }
+  } catch (e) {
+    console.error("[App][enqueueAudio] ", e);
   }
 };
+
+// /**
+//  * 播放服务器传来的 blob 语音文件
+//  * @param {Blob} blob Blob 文件
+//  */
+// const playBlob = (blob: Blob) => {
+//   audioPlayer.src = URL.createObjectURL(blob);
+//   audioPlayer.play();
+// };
+
+// /**
+//  * 将 Wav 音频添加到队列中
+//  * @param {Blob} blob Wav 音频文件
+//  */
+// const enqueueAudio = async (blob: Blob): Promise<void> => {
+//   audioQueue.value.push(blob);
+//   if (!SPEAKING.value) {
+//     playNextAudio();
+//   }
+// };
 
 // ---------- 语音处理相关 end --------------
 </script>
@@ -364,8 +426,12 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
     <!-- 状态栏 -->
     <div class="status-container">
       <!-- <div class="connection-status disconnected">未连接</div> -->
-      <div class="connection-status disconnected" ref="connectionStatus">
-        离线
+      <div
+        v-if="isMounted"
+        class="connection-status disconnected"
+        ref="connectionState"
+      >
+        {{ connectionStateText }}
       </div>
       <div class="device-id">设备ID：{{ deviceId }}</div>
     </div>
