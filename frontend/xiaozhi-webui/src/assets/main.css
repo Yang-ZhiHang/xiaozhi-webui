@@ -1,11 +1,5 @@
 @import './base.css';
 
-#app {
-  max-width: 1280px;
-  margin: 0 auto;
-  font-weight: normal;
-}
-
 input {
   padding: 0.6rem 0.8rem;
   outline: none;
@@ -15,7 +9,12 @@ input {
   transition: all 0.1s ease-in-out;
 
   &:focus {
-    border-color: #4f46e5;
-    box-shadow: #4e46e546 0 0 0 2px;
+    border-color: var(--primary-color);
+    box-shadow: var(--primary-neo-color) 0 0 0 2px;
   }
+}
+
+:root {
+  --primary-color: #4f46e5;
+  --primary-neo-color: #4e46e546;
 }
