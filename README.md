@@ -18,7 +18,7 @@ xiaozhi-webui 是一个使用 Python + Vue3 实现的小智语音 Web 端，旨�
 </div>
 
 <div style="display: flex; justify-content: space-around;">
-    <img src="./images/聊天.jpg" alt="演示图片" style="width: 45%;">
+    <img src="./images/聊天2.jpg" alt="演示图片" style="width: 45%;">
     <img src="./images/设置面板.jpg" alt="演示图片" style="width: 45%;">
 </div>
 
