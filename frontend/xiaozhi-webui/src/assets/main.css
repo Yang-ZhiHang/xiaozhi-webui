@@ -14,6 +14,11 @@ input {
   }
 }
 
+button {
+  border: none;
+  background-color: transparent;
+}
+
 :root {
   --primary-color: #4f46e5;
   --primary-neo-color: #4e46e546;
