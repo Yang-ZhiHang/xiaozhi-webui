@@ -99,6 +99,11 @@ function sendMessage() {
       text: message,
       source: "text", // 标记这是文本消息
     });
+
+    if (isPlaying.value) {
+      abortPlayingAndClean();
+    }
+
     ws.send(textMessage);
     messageInput.value!.innerText = "";
     // appendMessage("user", message);
@@ -221,11 +226,15 @@ const connect = (): void => {
     try {
       // 处理音频消息
       if (event.data instanceof Blob) {
-        // console.log("[App][ws.onmessage] Audio data received", event.data);
-        if (SPEAKING.value) {
+        console.log("[App][ws.onmessage] Audio data received", event.data);
+        if (isPlaying.value) {
+          console.log("[App][ws.onmessage] Audio is playing, enqueuing...");
           await enqueueAudio(event.data);
           return;
         } else {
+          console.log(
+            "[App][ws.onmessage] Audio is not playing, playing now..."
+          );
           await enqueueAudio(event.data);
           playNextAudio();
         }
@@ -273,7 +282,7 @@ onMounted(() => {
 
   // 等待 DOM 渲染完成后再连接
   nextTick(() => {
-    // connect();
+    connect();
   });
 });
 
@@ -300,20 +309,20 @@ declare global {
     webkitAudioContext: typeof AudioContext;
   }
 }
-const SPEAKING = ref<boolean>(false);
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-const gainNode = audioContext.createGain();
+const isPlaying = ref<boolean>(false);
+let audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+// 音频队列
 const audioQueue = ref<AudioBuffer[]>([]);
+
 let currentTime = 0;
-gainNode.connect(audioContext.destination);
-audioContext.suspend();
 
 /**
  * 播放音频队列中的下一个音频
  */
 const playNextAudio = (): void => {
   // console.log("[App][playNextAudio] Audio List:", audioQueue.value);
-  if (SPEAKING.value) {
+  if (isPlaying.value) {
     return;
   }
   if (audioQueue.value.length === 0) {
@@ -322,9 +331,24 @@ const playNextAudio = (): void => {
 
   const nextAudioBuffer: AudioBuffer | undefined = audioQueue.value.shift();
   if (nextAudioBuffer) {
-    SPEAKING.value = true;
     playBlob(nextAudioBuffer);
   }
+};
+
+/**
+ * 停止播放音频，并清空队列，将播放状态设置为 false
+ */
+const abortPlayingAndClean = (): void => {
+  audioContext.suspend();
+  isPlaying.value = false;
+  audioQueue.value = [];
+
+  // 通知小智，你被打断了
+  const abort_message = {
+    type: "abort",
+    session_id: configStore.getSessionID(),
+  };
+  ws.send(JSON.stringify(abort_message));
 };
 
 /**
@@ -341,12 +365,15 @@ const playBlob = async (audioBuffer: AudioBuffer) => {
     // 创建播放节点
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(gainNode);
+    source.connect(audioContext.destination);
 
     // 计算精确播放时间
     if (currentTime < audioContext.currentTime) {
       currentTime = audioContext.currentTime;
     }
+
+    isPlaying.value = true;
+    console.log("[App][playBlob] set isPlaying = true.");
 
     // 调度播放
     source.start(currentTime);
@@ -354,11 +381,12 @@ const playBlob = async (audioBuffer: AudioBuffer) => {
 
     // 播放结束处理
     source.onended = () => {
-      SPEAKING.value = false;
+      isPlaying.value = false;
+      console.log("[App][playBlob] set isPlaying = false");
       playNextAudio();
     };
   } catch (e) {
-    console.error("[App][playBlob] 音频解码失败:", e);
+    console.error("[App][playBlob] Audio play fail:", e);
   }
 };
 
@@ -373,7 +401,7 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
       arrayBuffer
     );
     audioQueue.value.push(audioBuffer);
-    if (!SPEAKING.value) {
+    if (!isPlaying.value) {
       playNextAudio();
     }
   } catch (e) {
@@ -399,11 +427,17 @@ onMounted(async () => {
 // ---------- 设置面板 end --------------
 
 // ---------- 语音通话 start --------------
-import PhoneCallPanel from "./components/PhoneCallPanel.vue";
-
 const isPhoneCallPanelVisible = ref<boolean>(false);
 const showPhoneCallPanel = () => {
+  // 如果小智正在讲话，就暂停讲话
+  if (isPlaying.value) {
+    abortPlayingAndClean();
+  }
   isPhoneCallPanelVisible.value = true;
+};
+
+const closePhoneCallPanel = () => {
+  isPhoneCallPanelVisible.value = false;
 };
 // ---------- 语音通话 end ----------------
 </script>
@@ -543,7 +577,19 @@ const showPhoneCallPanel = () => {
     </div>
 
     <!-- 语音通话界面 -->
-    <PhoneCallPanel @phoneCallPanelClose="isPhoneCallPanelVisible = false" :class="{ active: isPhoneCallPanelVisible }" />
+    <div
+      class="phone-call-container"
+      :class="{ active: isPhoneCallPanelVisible }"
+    >
+      <div class="image-container">
+        <img src="/avatar.png" alt="小智头像" />
+      </div>
+      <div class="button-container">
+        <button @click="closePhoneCallPanel">
+          <img src="/phone.png" alt="挂断" />
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -870,6 +916,55 @@ const showPhoneCallPanel = () => {
 
       #quit {
         background-color: #f43f5e;
+      }
+    }
+  }
+
+  /* 语音通话界面 */
+  .phone-call-container {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 1rem;
+    width: 100%;
+    height: 100%;
+    background-color: #fff;
+    transform: translateY(-100%);
+    overflow: hidden;
+    transition: all 0.5s ease-in-out;
+
+    &.active {
+      transform: translateY(0);
+    }
+
+    .image-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      width: 10rem;
+      height: 10rem;
+      margin: 100px auto;
+      overflow: hidden;
+      border-radius: 50%;
+      box-shadow: 1px 1px 10px 1px rgba(0, 0, 0, 0.2);
+      img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+    }
+    .button-container {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding-bottom: 3rem;
+      img {
+        width: 5rem;
+        height: 5rem;
+        border-radius: 50%;
+        box-shadow: 1px 1px 10px 1px rgba(0, 0, 0, 0.2);
+        cursor: pointer;
       }
     }
   }
