@@ -54,6 +54,7 @@ export const useConfigStore = defineStore('config', () => {
     try {
       const response = await fetch(import.meta.env.VITE_APP_SERVER_URL + "/config")
       const data = await response.json()
+      console.log("[useConfigStore][init] data: ", data)
       if (data.ws_proxy_url) {
         setWSProxyURL(data.ws_proxy_url)
       }
@@ -72,8 +73,27 @@ export const useConfigStore = defineStore('config', () => {
     }
   }
 
+  const saveConfig = async (config: object) => {
+    try {
+      const data: JSON = JSON.parse(JSON.stringify(config))
+      const response = await fetch(import.meta.env.VITE_APP_SERVER_URL + "/save_config", {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data)
+      })
+      if (!response.ok) {
+        throw new Error('[useConfigStore][saveConfig] Network response was not ok')
+      }
+    } catch (error) {
+      console.error("[useConfigStore][saveConfig] fetch error:", error)
+    }
+  }
+
   return {
     init,
+    saveConfig,
     setWSURL,
     setWSProxyURL,
     setTokenEnable,

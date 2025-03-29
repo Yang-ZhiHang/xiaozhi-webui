@@ -1,10 +1,10 @@
 import os
+from urllib.parse import urlparse
 import uuid
-from dotenv import load_dotenv
 import asyncio
 import atexit
 from websocket_proxy import WebSocketProxy
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 import multiprocessing
 import json
@@ -41,8 +41,14 @@ def get_env():
         with open(config_path, "w") as f:
             json.dump(DEFAULT_CONFIG, f)
     print("[app][get_env] 正在加载配置文件: ", config_path)
-    with open(config_path, "r") as f:
-        config = json.load(f)
+    try:
+        with open(config_path, "r") as f:
+            config = json.load(f)
+    except json.JSONDecodeError:
+        print("[app][get_env] 配置文件格式错误，正在重置为默认配置")
+        with open(config_path, "w") as f:
+            json.dump(DEFAULT_CONFIG, f)
+        config = DEFAULT_CONFIG
     return config
 
 
@@ -95,17 +101,40 @@ CORS(app)
 @app.route("/config", methods=["GET"])
 def get_config():
     """获取配置信息"""
+    config = get_env()
+    print("[app][get_config] 配置文件: ", config)
     data = {
-        "ws_url": WS_URL,
-        "ws_proxy_url": f"ws://{PROXY_HOST}:{PROXY_PORT}",
-        "token_enable": TOKEN_ENABLE,
+        "ws_url": config["WS_URL"],
+        "ws_proxy_url": f"ws://{config["PROXY_HOST"]}:{config["PROXY_PORT"]}",
+        "token_enable": config["TOKEN_ENABLE"],
         "device_id": DEVICE_ID,
         "code": 0,
     }
-    if TOKEN_ENABLE:
-        data["token"] = DEVICE_TOKEN
+    if config["TOKEN_ENABLE"]:
+        data["token"] = config["DEVICE_TOKEN"]
 
     return jsonify(data), 200
+
+
+@app.route("/save_config", methods=["POST"])
+def save_config():
+    """保存配置信息"""
+    data = request.json
+    config = get_env()
+    ws_proxy_url = data["WS_PROXY_URL"]
+    proxy_host = urlparse(ws_proxy_url).hostname
+    proxy_port = urlparse(ws_proxy_url).port
+    data["PROXY_HOST"] = proxy_host
+    data["PROXY_PORT"] = proxy_port
+    data["DEVICE_TOKEN"] = data["TOKEN"]
+    del data["TOKEN"], data["WS_PROXY_URL"]
+    config.update(data)
+    print("[app][save_config] 更新后的配置文件: ", config)
+    with open(
+        os.path.join(os.path.dirname(__file__), "config", "config.json"), "w"
+    ) as f:
+        json.dump(config, f, indent=4)
+    return jsonify({"code": 0, "message": "配置已保存"}), 200
 
 
 if __name__ == "__main__":

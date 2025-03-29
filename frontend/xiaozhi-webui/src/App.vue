@@ -295,14 +295,57 @@ onUnmounted(() => {
 // ---------- WebSocket 连接相关 end ------------
 
 // ---------- 设置面板相关 start ------------
+const WSURL = ref<HTMLInputElement | null>(null);
+const WSProxyURL = ref<HTMLInputElement | null>(null);
+const tokenEnable = ref<boolean>(false);
+const token = ref<HTMLInputElement | null>(null);
 const settingPanel = ref<HTMLDivElement | null>(null);
-const showSettingPanel = () => {
+
+const handleSaveConfig = () => {
+  const ws_url = WSURL.value!.value;
+  const ws_proxy_url = WSProxyURL.value!.value;
+  const token_enable = tokenEnable.value;
+  const token_value = token.value!.value;
+  const data = {
+    WS_URL: ws_url,
+    WS_PROXY_URL: ws_proxy_url,
+    TOKEN_ENABLE: token_enable,
+    TOKEN: token_value,
+  };
+  configStore.saveConfig(data);
+  settingPanel.value!.classList.remove("settingPanelVisible");
+};
+
+const showSettingPanel = async () => {
   if (!settingPanel.value) {
     console.log("[App][connect] settingPanel is null");
     return;
   }
+  await configStore.init();
+  deviceId.value = configStore.getDeviceID();
+  WSURL.value!.value = configStore.getWSURL();
+  WSProxyURL.value!.value = configStore.getWSProxyURL();
+  tokenEnable.value = configStore.getTokenEnable();
+  token.value!.value = configStore.getToken();
   settingPanel.value!.classList.toggle("settingPanelVisible");
 };
+
+const closeSettingPanel = () => {
+  if (!settingPanel.value) {
+    console.log("[App][connect] settingPanel is null");
+    return;
+  }
+  settingPanel.value!.classList.remove("settingPanelVisible");
+};
+
+onMounted(async () => {
+  await configStore.init();
+  deviceId.value = configStore.getDeviceID();
+  WSURL.value!.value = configStore.getWSURL();
+  WSProxyURL.value!.value = configStore.getWSProxyURL();
+  tokenEnable.value = configStore.getTokenEnable();
+  token.value!.value = configStore.getToken();
+});
 // ---------- 设置面板相关 end --------------
 
 // ---------- 语音处理相关 start ------------
@@ -415,19 +458,6 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
 // ---------- 语音处理相关 end --------------
 
 // ---------- 设置面板 start ------------
-const WSURL = ref<HTMLInputElement | null>(null);
-const WSProxyURL = ref<HTMLInputElement | null>(null);
-const tokenEnable = ref<boolean>(false);
-const token = ref<HTMLInputElement | null>(null);
-
-onMounted(async () => {
-  await configStore.init();
-  deviceId.value = configStore.getDeviceID();
-  WSURL.value!.value = configStore.getWSURL();
-  WSProxyURL.value!.value = configStore.getWSProxyURL();
-  tokenEnable.value = configStore.getTokenEnable();
-  token.value!.value = configStore.getToken();
-});
 // ---------- 设置面板 end --------------
 
 // ---------- 语音通话 start --------------
@@ -794,8 +824,8 @@ onUnmounted(async () => {
         </div>
       </div>
       <div class="bottom-buttons">
-        <button id="save-config">保存配置</button>
-        <button id="quit" @click="showSettingPanel">退出</button>
+        <button id="save-config" @click="handleSaveConfig">保存配置</button>
+        <button id="quit" @click="closeSettingPanel">退出</button>
       </div>
     </div>
 
