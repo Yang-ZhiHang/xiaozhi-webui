@@ -33,29 +33,6 @@ def get_mac_address():
     )
 
 
-def pcm_to_opus(pcm_data):
-    """将PCM音频数据转换为Opus格式"""
-    try:
-        # 创建编码器：16kHz, 单声道, VOIP模式
-        encoder = opuslib.Encoder(16000, 1, "voip")
-
-        try:
-            # 确保PCM数据是Int16格式
-            pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
-
-            # 编码PCM数据，每帧960个采样点
-            opus_data = encoder.encode(pcm_array.tobytes(), 960)  # 60ms at 16kHz
-            return opus_data
-
-        except opuslib.OpusError as e:
-            print(f"Opus编码错误: {e}, 数据长度: {len(pcm_data)}")
-            return None
-
-    except Exception as e:
-        print(f"Opus初始化错误: {e}")
-        return None
-
-
 def opus_to_wav(opus_data):
     """将Opus音频数据转换为WAV格式"""
     try:
@@ -69,7 +46,7 @@ def opus_to_wav(opus_data):
                 # 将PCM数据转换为numpy数组
                 audio_array = np.frombuffer(pcm_data, dtype=np.int16)
 
-                # 创建WAV文件
+                # 创建 Wave 文件
                 wav_io = io.BytesIO()
                 with wave.open(wav_io, "wb") as wav:
                     wav.setnchannels(1)  # 单声道
@@ -88,30 +65,50 @@ def opus_to_wav(opus_data):
         return None
 
 
+def pcm_to_opus(pcm_data: bytes):
+    """将 PCM 音频数据转换为 Opus 格式"""
+    try:
+        encoder = opuslib.Encoder(16000, 1, "voip")
+
+        # 转化为 numpy 数组
+        pcm_array = np.frombuffer(pcm_data, dtype=np.int16)
+
+        # 将 PCM 数据编码为 Opus
+        opus_data = encoder.encode(pcm_array.tobytes(), 960)
+
+        return opus_data
+    except opuslib.OpusError as e:
+        print(f"Opus 编码错误: {e}, 数据长度: {len(pcm_data)}")
+        return None
+
+
 class AudioProcessor:
-    def __init__(self, buffer_size=960):
-        self.buffer_size = buffer_size
+    def __init__(self, buffer_size):
+        self.buffer_size: int = buffer_size
         self.buffer = np.array([], dtype=np.float32)
         self.sample_rate = 16000
 
     def reset_buffer(self):
         self.buffer = np.array([], dtype=np.float32)
 
-    def process_audio(self, input_data):
-        # 将输入数据转换为float32数组
+    def process_audio(self, input_data: bytes) -> list[bytes]:
+
+        # 将输入数据转换为 float32 数组
         input_array = np.frombuffer(input_data, dtype=np.float32)
 
         # 将新数据添加到缓冲区
         self.buffer = np.append(self.buffer, input_array)
 
         chunks = []
+
         # 当缓冲区达到指定大小时处理数据
         while len(self.buffer) >= self.buffer_size:
+
             # 提取数据
             chunk = self.buffer[: self.buffer_size]
             self.buffer = self.buffer[self.buffer_size :]
 
-            # 转换为16位整数
+            # 转换为 16 位整数
             pcm_data = (chunk * 32767).astype(np.int16)
             chunks.append(pcm_data.tobytes())
 
@@ -136,18 +133,18 @@ class WebSocketProxy:
         token_enable: bool,
         token: str,
     ):
-        self.device_id = device_id
-        self.websocket_url = websocket_url
-        self.proxy_host = proxy_host
-        self.proxy_port = proxy_port
-        self.token_enable = token_enable
-        self.token = token
+        self.device_id: str = device_id
+        self.websocket_url: str = websocket_url
+        self.proxy_host: str = proxy_host
+        self.proxy_port: str = proxy_port
+        self.token_enable: bool = token_enable
+        self.token: str = token
 
-        self.audio_processor = AudioProcessor(buffer_size=960)
+        self.audio_processor = AudioProcessor(960)
         self.decoder = opuslib.Decoder(16000, 1)  # 保持单个解码器实例即可
-        self.audio_buffer = bytearray()  # 用于存储解码后的音频数据
-        self.is_first_audio = True  # 用于判断是否创建 Wave 头信息
-        self.total_samples = 0  # 跟踪总采样数
+        self.audio_buffer: bytearray = bytearray()  # 用于存储解码后的音频数据
+        self.is_first_audio: bool = True  # 用于判断是否创建 Wave 头信息
+        self.total_samples: int = 0  # 跟踪总采样数
         self.audio_lock = asyncio.Lock()  # 保证音频按顺序发送
 
         self.headers = {
@@ -337,12 +334,41 @@ class WebSocketProxy:
         """处理来自客户端的消息"""
         try:
             async for message in client_ws:
+
+                # 文字数据和 Json 数据
                 if isinstance(message, str):
-                    await server_ws.send(message)
+                    try:
+                        msg_data = json.loads(message)
+                        if msg_data.get("type") == "reset":
+                            print(
+                                "[WebsocketProxy][handle_client_messages] Reset buffer."
+                            )
+                            self.audio_processor.reset_buffer()
+                        else:
+                            await server_ws.send(message)
+                    except json.JSONDecodeError:
+                        await server_ws.send(message)
+
+                # 音频数据
                 else:
-                    print(
-                        "[WebsocketProxy][handle_client_messages] Message is not a string."
-                    )
+                    try:
+                        # 确保数据是 Float32Array 格式
+                        audio_data = np.frombuffer(message, dtype=np.float32)
+                        if len(audio_data) > 0:
+                            chunks = self.audio_processor.process_audio(
+                                audio_data.tobytes()
+                            )
+                            for chunk in chunks if chunks else []:
+                                opus_data = pcm_to_opus(chunk)
+                                await server_ws.send(opus_data)
+                        else:
+                            print(
+                                "[WebsocketProxy][handle_client_messages] No audio data received."
+                            )
+                    except Exception as e:
+                        print(
+                            f"[WebsocketProxy][handle_client_messages] Audio process error: {e}"
+                        )
         except Exception as e:
             print(
                 f"[WebsocketProxy][handle_client_messages] Client message handling error: {e}"

@@ -52,9 +52,8 @@ export const useConfigStore = defineStore('config', () => {
   // Initialization
   const init = async () => {
     try {
-      const response = await fetch("http://localhost:8081/config")
+      const response = await fetch(import.meta.env.VITE_APP_SERVER_URL + "/config")
       const data = await response.json()
-
       if (data.ws_proxy_url) {
         setWSProxyURL(data.ws_proxy_url)
       }
@@ -69,7 +68,7 @@ export const useConfigStore = defineStore('config', () => {
         setDeviceID(data.device_id)
       }
     } catch (error) {
-      console.error("[useConfigStore][init] ", error)
+      console.error("[useConfigStore][init]", error)
     }
   }
 

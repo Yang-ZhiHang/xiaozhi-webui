@@ -100,7 +100,7 @@ function sendMessage() {
       source: "text", // 标记这是文本消息
     });
 
-    if (isPlaying.value) {
+    if (isPlaying) {
       abortPlayingAndClean();
     }
 
@@ -226,8 +226,8 @@ const connect = (): void => {
     try {
       // 处理音频消息
       if (event.data instanceof Blob) {
-        console.log("[App][ws.onmessage] Audio data received", event.data);
-        if (isPlaying.value) {
+        // console.log("[App][ws.onmessage] Audio data received", event.data);
+        if (isPlaying) {
           console.log("[App][ws.onmessage] Audio is playing, enqueuing...");
           await enqueueAudio(event.data);
           return;
@@ -242,7 +242,7 @@ const connect = (): void => {
       // 处理文本消息
       else {
         const data = JSON.parse(event.data);
-        // console.log("[App][ws.onmessage] Text message received:", data);
+        console.log("[App][ws.onmessage] Text message received:", data);
 
         // WebSocket 握手成功，获取 session_id
         if (data.type === "hello") {
@@ -263,7 +263,10 @@ const connect = (): void => {
         }
         // 服务端返回的文本信息
         else if (data.type === "tts") {
-          if (data.state === "sentence_start") {
+          if (data.state === "stop") {
+            console.log("[App][ws.onmessage] AI speak done.");
+            await startRecording();
+          } else if (data.state === "sentence_start") {
             appendMessage("server", data.text);
             chatContainer.value!.scrollTop = chatContainer.value!.scrollHeight;
           }
@@ -309,12 +312,13 @@ declare global {
     webkitAudioContext: typeof AudioContext;
   }
 }
-const isPlaying = ref<boolean>(false);
-let audioContext = new (window.AudioContext || window.webkitAudioContext)();
 
-// 音频队列
+const audioContext = new (window.AudioContext || window.webkitAudioContext)({
+  sampleRate: 16000,
+});
 const audioQueue = ref<AudioBuffer[]>([]);
 
+let isPlaying: boolean = false;
 let currentTime = 0;
 
 /**
@@ -322,7 +326,7 @@ let currentTime = 0;
  */
 const playNextAudio = (): void => {
   // console.log("[App][playNextAudio] Audio List:", audioQueue.value);
-  if (isPlaying.value) {
+  if (isPlaying) {
     return;
   }
   if (audioQueue.value.length === 0) {
@@ -340,7 +344,7 @@ const playNextAudio = (): void => {
  */
 const abortPlayingAndClean = (): void => {
   audioContext.suspend();
-  isPlaying.value = false;
+  isPlaying = false;
   audioQueue.value = [];
 
   // 通知小智，你被打断了
@@ -357,7 +361,7 @@ const abortPlayingAndClean = (): void => {
  */
 const playBlob = async (audioBuffer: AudioBuffer) => {
   try {
-    // 恢复音频上下文（需要用户交互后调用）
+    // 恢复 audioContext 为活跃状态
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
@@ -372,7 +376,7 @@ const playBlob = async (audioBuffer: AudioBuffer) => {
       currentTime = audioContext.currentTime;
     }
 
-    isPlaying.value = true;
+    isPlaying = true;
     console.log("[App][playBlob] set isPlaying = true.");
 
     // 调度播放
@@ -381,7 +385,7 @@ const playBlob = async (audioBuffer: AudioBuffer) => {
 
     // 播放结束处理
     source.onended = () => {
-      isPlaying.value = false;
+      isPlaying = false;
       console.log("[App][playBlob] set isPlaying = false");
       playNextAudio();
     };
@@ -401,7 +405,7 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
       arrayBuffer
     );
     audioQueue.value.push(audioBuffer);
-    if (!isPlaying.value) {
+    if (!isPlaying) {
       playNextAudio();
     }
   } catch (e) {
@@ -427,18 +431,237 @@ onMounted(async () => {
 // ---------- 设置面板 end --------------
 
 // ---------- 语音通话 start --------------
+
 const isPhoneCallPanelVisible = ref<boolean>(false);
-const showPhoneCallPanel = () => {
+let audioStream: MediaStream | null = null;
+let processorNode: AudioWorkletNode | null = null;
+let isRecording: boolean = false;
+let haveFirstSpoke: boolean = false;
+let lastAudioTime = 0;
+let nextPlayTime = 0;
+const SILENCE_TIMEOUT = 2000; // 5秒无音频输入则认为是静音
+
+// 显示电话呼叫面板
+const showPhoneCallPanel = async () => {
   // 如果小智正在讲话，就暂停讲话
-  if (isPlaying.value) {
+  if (isPlaying) {
     abortPlayingAndClean();
   }
   isPhoneCallPanelVisible.value = true;
+
+  // TODO: 开启用户声音监听
+  // 如果用户声音大于一定阈值，开始录音
+  // 开始录音后，如果用户声音小于一定阈值一段时间，停止录音
+
+  // 清除还未播放的音频
+  audioQueue.value = [];
+  isPlaying = false;
+  nextPlayTime = 0;
+
+  // 保持 audioContext 为活跃状态
+  if (audioContext.state === "suspended") {
+    await audioContext.resume();
+  }
+
+  // 加载音频处理脚本
+  await audioContext.audioWorklet.addModule(
+    "/src/utils/audio/audioProcessor.ts"
+  );
+  console.log("[App][startRecording] New audioContext created:", audioContext);
+
+  // 初始化音频流
+  try {
+    audioStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+      },
+    });
+    console.log("[App][startRecording] UserMedia created:", audioStream);
+  } catch (err: unknown) {
+    console.log("[App][startRecording] Error getting user media:", err);
+  }
+
+  // 利用 MediaStream 创建音频源节点
+  const source = audioContext.createMediaStreamSource(audioStream!);
+
+  if (!processorNode) {
+    // 使用自定义的 audioContext 节点，用于后续处理音频数据
+    // https://developer.mozilla.org/zh-CN/docs/Web/API/AudioWorkletNode
+    processorNode = new AudioWorkletNode(audioContext, "audioProcessor", {
+      processorOptions: {
+        bufferSize: 960, // 16KHz 的采样频率下，60ms 包含的采样点个数
+      },
+    });
+    console.log(
+      "[App][startRecording] AudioWorkletNode created:",
+      processorNode
+    );
+
+    // 建立音频节点连接
+    source.connect(processorNode);
+
+    // Web Audio API 需要形成完整的音频处理图才会工作
+    // 所以需要将 processorNode 连接到 audioContext 的输出节点
+    processorNode.connect(audioContext.destination);
+
+    // 添加错误监听
+    processorNode.onprocessorerror = (e) => {
+      console.error("Processor error:", e);
+    };
+
+    // （主线程）处理节点的出口回调函数，用于接收 process 函数处理后的音频数据
+    let count = 0;
+    processorNode.port.onmessage = (e: MessageEvent) => {
+      if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
+        // TODO: 检测音量
+        // 开始说话就设置静音定时器，防抖
+        let audioLevel = 0;
+        if (e.data instanceof Float32Array) {
+          audioLevel = detectAudioLevel(e.data);
+        } else if (e.data.buffer) {
+          const audioData = new Float32Array(e.data.buffer);
+          audioLevel = detectAudioLevel(audioData);
+          ws.send(e.data.buffer);
+        }
+        // // 音量调试信息日志
+        // if (count % 10 === 0) {
+        //   console.log(
+        //     `[App][startRecording] Audio level: ${audioLevel.toFixed(2)}`
+        //   );
+        // }
+        if (audioLevel > 0.01 && !haveFirstSpoke) {
+          haveFirstSpoke = true;
+        }
+        if (haveFirstSpoke) {
+          if (audioLevel > 0.01 && e.data instanceof Float32Array) {
+            lastAudioTime = Date.now();
+            ws.send(e.data);
+          } else if (audioLevel > 0.01 && e.data.buffer) {
+            lastAudioTime = Date.now();
+            ws.send(e.data.buffer);
+          } else if (
+            audioLevel < 0.01 &&
+            Date.now() - lastAudioTime > SILENCE_TIMEOUT
+          ) {
+            stopRecording();
+          }
+        }
+      }
+    };
+  }
+
+  await startRecording();
 };
 
-const closePhoneCallPanel = () => {
+// 关闭电话呼叫面板
+const closePhoneCallPanel = async () => {
   isPhoneCallPanelVisible.value = false;
+
+  // TODO: 关闭用户声音监听
+  // 清理录音相关资源
+  await stopRecording();
 };
+
+/**
+ * 开始录音并发送音频数据
+ */
+function startRecording() {
+  haveFirstSpoke = false;
+  isRecording = true;
+  lastAudioTime = Date.now();
+
+  // 发送开始录音信号
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const startMessage = JSON.stringify({
+      type: "listen",
+      state: "start",
+      mode: "auto",
+    });
+    ws.send(startMessage);
+    console.log("[App][startRecording] Sending start message:", startMessage);
+  }
+
+  if (audioStream) {
+    audioStream.getTracks().forEach((track) => (track.enabled = true));
+  }
+}
+
+/**
+ * 停止录音
+ */
+function stopRecording() {
+  isRecording = false;
+  // 发送停止信号
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    const stopMessage = JSON.stringify({
+      type: "listen",
+      state: "stop",
+      mode: "auto",
+    });
+    ws.send(stopMessage);
+    console.log("[App][stopRecording] Stop message send:", stopMessage);
+  }
+
+  // 停止资源
+  if (audioStream) {
+    audioStream.getTracks().forEach((track) => (track.enabled = false));
+  }
+  if (processorNode) {
+    processorNode.disconnect();
+    ws.send(JSON.stringify({ type: "reset" }));
+  }
+
+  // 等待当前音频播放完成
+  if (audioContext) {
+    const currentTime = audioContext.currentTime;
+    if (nextPlayTime > currentTime) {
+      setTimeout(() => {
+        audioQueue.value = [];
+        isPlaying = false;
+        nextPlayTime = 0;
+      }, (nextPlayTime - currentTime) * 1000);
+    } else {
+      audioQueue.value = [];
+      isPlaying = false;
+      nextPlayTime = 0;
+    }
+  }
+}
+
+/**
+ * 音频电平检测
+ * @param {Float32Array} audioData 音频数据
+ * @returns {number} 音频电平值
+ */
+function detectAudioLevel(audioData: Float32Array): number {
+  if (!audioData || !audioData.length) return 0;
+  let sum = 0;
+  for (let i = 0; i < audioData.length; i++) {
+    sum += Math.abs(audioData[i]);
+  }
+  return sum / audioData.length;
+}
+
+onUnmounted(async () => {
+  if (processorNode) {
+    processorNode.port.onmessage = null;
+    processorNode.disconnect();
+    processorNode = null;
+  }
+  if (audioStream) {
+    audioStream.getTracks().forEach((track) => track.stop());
+    audioStream = null;
+  }
+  if (audioContext) {
+    audioQueue.value = [];
+    isRecording = false;
+    isPlaying = false;
+    await audioContext.close();
+  }
+});
 // ---------- 语音通话 end ----------------
 </script>
 
@@ -582,7 +805,7 @@ const closePhoneCallPanel = () => {
       :class="{ active: isPhoneCallPanelVisible }"
     >
       <div class="image-container">
-        <img src="/avatar.png" alt="小智头像" />
+        <img src="/avatar.jpg" alt="小智头像" />
       </div>
       <div class="button-container">
         <button @click="closePhoneCallPanel">
@@ -946,8 +1169,9 @@ const closePhoneCallPanel = () => {
       height: 10rem;
       margin: 100px auto;
       overflow: hidden;
-      border-radius: 50%;
+      border-radius: 10%;
       box-shadow: 1px 1px 10px 1px rgba(0, 0, 0, 0.2);
+      border: 2px solid #fff;
       img {
         width: 100%;
         height: 100%;
