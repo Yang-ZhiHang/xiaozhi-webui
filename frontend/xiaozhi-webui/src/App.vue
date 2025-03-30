@@ -146,12 +146,12 @@ const connect = (): void => {
   }
 
   const WSProxyURL = configStore.getWSProxyURL();
-  console.log("[App][connect] Connecting to:", WSProxyURL);
+  // console.log("[App][connect] Connecting to:", WSProxyURL);
   ws = new WebSocket(WSProxyURL);
 
   // WebSocket 保持连接状态时的回调函数
   ws.onopen = function () {
-    console.log("[App][ws.onopen] Connected to WebSocket server");
+    console.log("[App][ws.onopen] Connected to WebSocket server:", WSProxyURL);
 
     try {
       connectionState.value!.classList.remove("error");
@@ -226,7 +226,7 @@ const connect = (): void => {
     try {
       // 处理音频消息
       if (event.data instanceof Blob) {
-        // console.log("[App][ws.onmessage] Audio data received", event.data);
+        console.log("[App][ws.onmessage] Audio data received", event.data);
         if (isPlaying) {
           console.log("[App][ws.onmessage] Audio is playing, enqueuing...");
           await enqueueAudio(event.data);
@@ -363,16 +363,22 @@ const audioQueue = ref<AudioBuffer[]>([]);
 
 let isPlaying: boolean = false;
 let currentTime = 0;
+let animationCheckInterval: number | null = null;
+let analyser: AnalyserNode;
+let gainNode: GainNode;
 
 /**
+ * 初始化音频分析器
+ */ /**
  * 播放音频队列中的下一个音频
  */
 const playNextAudio = (): void => {
-  // console.log("[App][playNextAudio] Audio List:", audioQueue.value);
+  console.log("[App][playNextAudio] Audio List:", audioQueue.value);
   if (isPlaying) {
     return;
   }
   if (audioQueue.value.length === 0) {
+    updateAIWaveAnimation(0);
     return;
   }
 
@@ -408,30 +414,97 @@ const playBlob = async (audioBuffer: AudioBuffer) => {
     if (audioContext.state === "suspended") {
       await audioContext.resume();
     }
-
     // 创建播放节点
     const source = audioContext.createBufferSource();
     source.buffer = audioBuffer;
-    source.connect(audioContext.destination);
 
-    // 计算精确播放时间
-    if (currentTime < audioContext.currentTime) {
-      currentTime = audioContext.currentTime;
+    // 创建音频分析器
+    if (isPhoneCallPanelVisible.value && !analyser) {
+      analyser = audioContext.createAnalyser();
+      analyser.fftSize = 256; // 设置 FFT 大小
+    }
+    // 创建增益节点
+    if (isPhoneCallPanelVisible.value && !gainNode) {
+      gainNode = audioContext.createGain();
     }
 
-    isPlaying = true;
-    console.log("[App][playBlob] set isPlaying = true.");
+    if (isPhoneCallPanelVisible.value) {
+      source.connect(analyser);
+      analyser.connect(gainNode);
+      gainNode.connect(audioContext.destination);
+      const bufferLength = analyser.frequencyBinCount;
+      const dataArray = new Float32Array(bufferLength);
+      if (animationCheckInterval) {
+        clearInterval(animationCheckInterval);
+        animationCheckInterval = null;
+      }
+      // 设置音频分析定时器（节流）
+      animationCheckInterval = setInterval(() => {
+        if (isPlaying && isPhoneCallPanelVisible.value) {
+          analyser.getFloatTimeDomainData(dataArray);
+          const audioLevel = detectAudioLevel(dataArray);
+          console.log(
+            "[App][animationCheckInterval] Audio Level:",
+            audioLevel.toFixed(2)
+          );
+          updateAIWaveAnimation(audioLevel);
+        }
+      }, 100);
 
-    // 调度播放
-    source.start(currentTime);
-    currentTime += audioBuffer.duration;
+      // 确保音频片段之间无间隙
+      const currentTime = audioContext.currentTime;
+      const startTime = Math.max(currentTime, nextPlayTime);
 
-    // 播放结束处理
-    source.onended = () => {
-      isPlaying = false;
-      console.log("[App][playBlob] set isPlaying = false");
-      playNextAudio();
-    };
+      // 添加淡入淡出效果
+      const fadeDuration = 0.005;
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(1, startTime + fadeDuration);
+      gainNode.gain.setValueAtTime(
+        1,
+        startTime + audioBuffer.duration - fadeDuration
+      );
+      gainNode.gain.linearRampToValueAtTime(
+        0,
+        startTime + audioBuffer.duration
+      );
+
+      isPlaying = true;
+      console.log("[App][playBlob] set isPlaying = true.");
+
+      source.start(startTime);
+      nextPlayTime = startTime + audioBuffer.duration;
+
+      source.onended = () => {
+        isPlaying = false;
+        source.disconnect();
+        gainNode.disconnect();
+        analyser.disconnect();
+        console.log("[App][playBlob] set isPlaying = false");
+        playNextAudio();
+      };
+    } else {
+      source.connect(audioContext.destination);
+
+      // 计算精确播放时间
+      if (currentTime < audioContext.currentTime) {
+        currentTime = audioContext.currentTime;
+      }
+
+      isPlaying = true;
+      console.log("[App][playBlob] set isPlaying = true.");
+
+      // 调度播放
+      source.start(currentTime);
+      currentTime += audioBuffer.duration;
+
+      // 播放结束处理
+      source.onended = () => {
+        isPlaying = false;
+        source.disconnect();
+        console.log("[App][playBlob] set isPlaying = false");
+        playNextAudio();
+      };
+    }
   } catch (e) {
     console.error("[App][playBlob] Audio play fail:", e);
   }
@@ -497,7 +570,7 @@ const showPhoneCallPanel = async () => {
   await audioContext.audioWorklet.addModule(
     "/src/utils/audio/audioProcessor.ts"
   );
-  console.log("[App][startRecording] New audioContext created:", audioContext);
+  // console.log("[App][startRecording] New audioContext created:", audioContext);
 
   // 初始化音频流
   try {
@@ -509,7 +582,7 @@ const showPhoneCallPanel = async () => {
         noiseSuppression: true,
       },
     });
-    console.log("[App][startRecording] UserMedia created:", audioStream);
+    // console.log("[App][startRecording] UserMedia created:", audioStream);
   } catch (err: unknown) {
     console.log("[App][startRecording] Error getting user media:", err);
   }
@@ -525,10 +598,7 @@ const showPhoneCallPanel = async () => {
         bufferSize: 960, // 16KHz 的采样频率下，60ms 包含的采样点个数
       },
     });
-    console.log(
-      "[App][startRecording] AudioWorkletNode created:",
-      processorNode
-    );
+    // console.log("[App][startRecording] AudioWorkletNode created:", processorNode);
 
     // 建立音频节点连接
     source.connect(processorNode);
@@ -543,7 +613,6 @@ const showPhoneCallPanel = async () => {
     };
 
     // （主线程）处理节点的出口回调函数，用于接收 process 函数处理后的音频数据
-    let count = 0;
     processorNode.port.onmessage = (e: MessageEvent) => {
       if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
         // TODO: 检测音量
@@ -556,21 +625,17 @@ const showPhoneCallPanel = async () => {
           audioLevel = detectAudioLevel(audioData);
           ws.send(e.data.buffer);
         }
-        // // 音量调试信息日志
-        // if (count % 10 === 0) {
-        //   console.log(
-        //     `[App][startRecording] Audio level: ${audioLevel.toFixed(2)}`
-        //   );
-        // }
         if (audioLevel > 0.01 && !haveFirstSpoke) {
           haveFirstSpoke = true;
         }
         if (haveFirstSpoke) {
           if (audioLevel > 0.01 && e.data instanceof Float32Array) {
             lastAudioTime = Date.now();
+            updateUserWaveAnimation(audioLevel);
             ws.send(e.data);
           } else if (audioLevel > 0.01 && e.data.buffer) {
             lastAudioTime = Date.now();
+            updateUserWaveAnimation(audioLevel);
             ws.send(e.data.buffer);
           } else if (
             audioLevel < 0.01 &&
@@ -581,6 +646,9 @@ const showPhoneCallPanel = async () => {
         }
       }
     };
+  } else {
+    source.connect(processorNode);
+    processorNode.connect(audioContext.destination);
   }
 
   await startRecording();
@@ -592,12 +660,14 @@ const closePhoneCallPanel = async () => {
 
   // TODO: 关闭用户声音监听
   // 清理录音相关资源
+  if (animationCheckInterval) {
+    clearInterval(animationCheckInterval);
+    animationCheckInterval = null;
+  }
   await stopRecording();
 };
 
-/**
- * 开始录音并发送音频数据
- */
+// 开始录音并发送音频数据
 function startRecording() {
   haveFirstSpoke = false;
   isRecording = true;
@@ -619,9 +689,7 @@ function startRecording() {
   }
 }
 
-/**
- * 停止录音
- */
+// 停止录音
 function stopRecording() {
   isRecording = false;
   // 发送停止信号
@@ -659,6 +727,10 @@ function stopRecording() {
       nextPlayTime = 0;
     }
   }
+
+  showUserWaveAnimation(false);
+  updateUserWaveAnimation(0);
+  updateAIWaveAnimation(0);
 }
 
 /**
@@ -676,6 +748,7 @@ function detectAudioLevel(audioData: Float32Array): number {
 }
 
 onUnmounted(async () => {
+  console.log("[App][onUnmounted] Clearing resources...");
   if (processorNode) {
     processorNode.port.onmessage = null;
     processorNode.disconnect();
@@ -693,6 +766,62 @@ onUnmounted(async () => {
   }
 });
 // ---------- 语音通话 end ----------------
+
+// ---------- 对话的动态效果 start ----------
+
+// 用户讲话时的波形动画
+const voiceWave = ref<HTMLDivElement | null>(null);
+function showUserWaveAnimation(show: boolean) {
+  if (!voiceWave.value) {
+    console.log("[App][showUserWaveAnimation] voiceWave is null, updating...");
+    voiceWave.value = document.querySelector(".voice-wave");
+    return;
+  }
+  if (show) {
+    voiceWave.value.classList.add("active");
+  } else {
+    voiceWave.value.classList.remove("active");
+  }
+}
+
+// 更新用户说话时的波形显示
+function updateUserWaveAnimation(audioLevel: number) {
+  const maxHeight = 24; // 最大高度
+  const minHeight = 6; // 最小高度
+
+  if (audioLevel > 0.01) {
+    const height = Math.min(maxHeight, minHeight + audioLevel * 100);
+    document.documentElement.style.setProperty("--wave-height", `${height}px`);
+    showUserWaveAnimation(true);
+  } else {
+    showUserWaveAnimation(false);
+  }
+}
+
+// 小智说话时的涟漪动画和头像动画
+const voiceAvatar = ref<HTMLDivElement | null>(null);
+function updateAIWaveAnimation(audioLevel: number) {
+  const maxScale = 1.05;
+
+  if (!voiceAvatar.value) {
+    console.log("[App][updateAIWaveAnimation] avatar is null, updating...");
+    voiceAvatar.value = document.querySelector(".voice-avatar");
+    return;
+  }
+
+  if (audioLevel > 0.01) {
+    // 根据音频电平计算缩放值
+    const scale = 1 + Math.min(maxScale - 1, audioLevel * 2); // 最大缩放到1.05
+    voiceAvatar.value.style.transform = `scale(${scale})`;
+    voiceAvatar.value.classList.add("speaking");
+  } else {
+    voiceAvatar.value.style.transform = "scale(1)";
+    if (audioLevel === 0) {
+      voiceAvatar.value.classList.remove("speaking");
+    }
+  }
+}
+// ---------- 对话的动态效果 end ------------
 </script>
 
 <template>
@@ -726,7 +855,6 @@ onUnmounted(async () => {
 
     <!-- 状态栏 -->
     <div class="status-container">
-      <!-- <div class="connection-status disconnected">未连接</div> -->
       <div
         v-if="isMounted"
         class="connection-status disconnected"
@@ -834,8 +962,27 @@ onUnmounted(async () => {
       class="phone-call-container"
       :class="{ active: isPhoneCallPanelVisible }"
     >
-      <div class="image-container">
-        <img src="/avatar.jpg" alt="小智头像" />
+      <div class="voice-avatar-container">
+        <div class="voice-avatar" ref="voiceAvatar">
+          <div class="ripple-1"></div>
+          <div class="ripple-2"></div>
+          <div class="ripple-3"></div>
+          <img src="/avatar.jpg" alt="小智头像" />
+        </div>
+      </div>
+      <div class="voice-wave-container">
+        <div class="voice-wave" ref="voiceWave">
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+          <div class="wave-line"></div>
+        </div>
       </div>
       <div class="button-container">
         <button @click="closePhoneCallPanel">
@@ -1182,7 +1329,7 @@ onUnmounted(async () => {
     padding: 1rem;
     width: 100%;
     height: 100%;
-    background-color: #fff;
+    background-color: #151414;
     transform: translateY(-100%);
     overflow: hidden;
     transition: all 0.5s ease-in-out;
@@ -1191,23 +1338,6 @@ onUnmounted(async () => {
       transform: translateY(0);
     }
 
-    .image-container {
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      width: 10rem;
-      height: 10rem;
-      margin: 100px auto;
-      overflow: hidden;
-      border-radius: 10%;
-      box-shadow: 1px 1px 10px 1px rgba(0, 0, 0, 0.2);
-      border: 2px solid #fff;
-      img {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-      }
-    }
     .button-container {
       display: flex;
       justify-content: center;
@@ -1221,6 +1351,175 @@ onUnmounted(async () => {
         cursor: pointer;
       }
     }
+
+    /* 用户说话时的音浪动画 */
+    .voice-wave-container {
+      position: absolute;
+      left: 50%;
+      bottom: 180px;
+      transform: translateX(-50%);
+      width: 320px;
+      height: 80px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+
+      .voice-wave {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        height: 100%;
+
+        .wave-line {
+          width: 5px;
+          background: linear-gradient(
+            180deg,
+            rgba(255, 64, 129, 0.8) 0%,
+            rgba(255, 121, 176, 0.6) 100%
+          );
+          border-radius: 4px;
+          height: 3px;
+          transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        &.active .wave-line {
+          animation: voiceWave 1s ease-in-out infinite;
+          will-change: height, opacity;
+
+          /* 给每个线条不同的动画延迟，创造波浪效果 */
+          &:nth-child(1) {
+            animation-delay: -0.4s;
+          }
+          &:nth-child(2) {
+            animation-delay: -0.3s;
+          }
+          &:nth-child(3) {
+            animation-delay: -0.2s;
+          }
+          &:nth-child(4) {
+            animation-delay: -0.1s;
+          }
+          &:nth-child(5) {
+            animation-delay: 0s;
+          }
+          &:nth-child(6) {
+            animation-delay: -0.1s;
+          }
+          &:nth-child(7) {
+            animation-delay: -0.2s;
+          }
+          &:nth-child(8) {
+            animation-delay: -0.3s;
+          }
+          &:nth-child(9) {
+            animation-delay: -0.4s;
+          }
+          &:nth-child(10) {
+            animation-delay: -0.5s;
+          }
+        }
+      }
+    }
+
+    /* 多层涟漪效果 */
+    .voice-avatar::before,
+    .voice-avatar::after,
+    .voice-avatar .ripple-1,
+    .voice-avatar .ripple-2,
+    .voice-avatar .ripple-3 {
+      content: "";
+      position: absolute;
+      border: 2px solid rgba(255, 255, 255, 0.6);
+      border-radius: 50%;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      pointer-events: none;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+    }
+
+    /* 小智头像的涟漪动画 */
+    .voice-avatar-container {
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      margin: 100px auto;
+      width: 10rem;
+      height: 10rem;
+
+      .voice-avatar {
+        position: relative;
+        overflow: visible;
+        height: 100%;
+        width: 100%;
+        border-radius: 10%;
+        box-shadow: 1px 1px 10px 1px rgba(0, 0, 0, 0.2);
+        transition: all 0.1s ease-in-out;
+
+        &.speaking {
+          animation: none;
+          transform-origin: center;
+          will-change: transform;
+
+          .ripple-1 {
+            animation: rippleWave 2s linear infinite;
+            animation-delay: 0s;
+          }
+
+          .ripple-2 {
+            animation: rippleWave 2s linear infinite;
+            animation-delay: 0.8s;
+          }
+
+          .ripple-3 {
+            animation: rippleWave 2s linear infinite;
+            animation-delay: 1.6s;
+          }
+        }
+
+        img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border: 2px solid #fff;
+          border-radius: 10%;
+        }
+      }
+    }
+  }
+}
+
+/* 涟漪动画 */
+@keyframes rippleWave {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 0.4;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2);
+    opacity: 0;
+  }
+}
+
+/* 音浪动画 */
+@keyframes voiceWave {
+  0% {
+    height: 2px;
+    opacity: 0.6;
+  }
+  50% {
+    height: var(--wave-height, 24px);
+    opacity: 0.8;
+  }
+  100% {
+    height: 2px;
+    opacity: 0.6;
   }
 }
 </style>

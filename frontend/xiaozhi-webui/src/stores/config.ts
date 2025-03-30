@@ -54,7 +54,7 @@ export const useConfigStore = defineStore('config', () => {
     try {
       const response = await fetch(import.meta.env.VITE_APP_SERVER_URL + "/config")
       const data = await response.json()
-      console.log("[useConfigStore][init] data: ", data)
+      // console.log("[useConfigStore][init] data: ", data)
       if (data.ws_proxy_url) {
         setWSProxyURL(data.ws_proxy_url)
       }
