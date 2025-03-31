@@ -3,7 +3,7 @@
     "TOKEN_ENABLE": true,
     "DEVICE_TOKEN": "test_token",
     "PROXY_HOST": "0.0.0.0",
-    "PROXY_PORT": 5000,
+    "PROXY_PORT": "8000",
     "BACKEND_HOST": "localhost",
     "BACKEND_PORT": "8081"
 }

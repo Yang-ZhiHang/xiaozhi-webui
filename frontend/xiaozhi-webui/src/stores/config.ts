@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 
 export const useConfigStore = defineStore('config', () => {
   const WSURL = ref<string>("wss://api.tenclass.net/xiaozhi/v1/")
-  const WSProxyURL = ref<string>("ws://localhost:5000")
+  const WSProxyURL = ref<string>("")
   const tokenEnable = ref<boolean>(false)
   const token = ref<string>("")
   const sessionID = ref<string>("")
@@ -54,7 +54,7 @@ export const useConfigStore = defineStore('config', () => {
     try {
       const response = await fetch(import.meta.env.VITE_APP_SERVER_URL + "/config")
       const data = await response.json()
-      // console.log("[useConfigStore][init] data: ", data)
+      console.log("[useConfigStore][init] data: ", data)
       if (data.ws_proxy_url) {
         setWSProxyURL(data.ws_proxy_url)
       }

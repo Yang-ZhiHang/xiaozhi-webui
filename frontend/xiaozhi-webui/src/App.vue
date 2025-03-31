@@ -38,10 +38,6 @@ const initInputField = (): void => {
   );
 };
 
-onMounted(() => {
-  initInputField();
-});
-
 /**
  * 添加消息到聊天框
  * @param {string} type 消息类型，user/server
@@ -279,19 +275,6 @@ const connect = (): void => {
     }
   };
 };
-
-onMounted(() => {
-  isMounted.value = true;
-
-  // 等待 DOM 渲染完成后再连接
-  nextTick(() => {
-    connect();
-  });
-});
-
-onUnmounted(() => {
-  isMounted.value = false;
-});
 // ---------- WebSocket 连接相关 end ------------
 
 // ---------- 设置面板相关 start ------------
@@ -338,14 +321,6 @@ const closeSettingPanel = () => {
   settingPanel.value!.classList.remove("settingPanelVisible");
 };
 
-onMounted(async () => {
-  await configStore.init();
-  deviceId.value = configStore.getDeviceID();
-  WSURL.value!.value = configStore.getWSURL();
-  WSProxyURL.value!.value = configStore.getWSProxyURL();
-  tokenEnable.value = configStore.getTokenEnable();
-  token.value!.value = configStore.getToken();
-});
 // ---------- 设置面板相关 end --------------
 
 // ---------- 语音处理相关 start ------------
@@ -764,6 +739,7 @@ onUnmounted(async () => {
     isPlaying = false;
     await audioContext.close();
   }
+  isMounted.value = false;
 });
 // ---------- 语音通话 end ----------------
 
@@ -822,6 +798,25 @@ function updateAIWaveAnimation(audioLevel: number) {
   }
 }
 // ---------- 对话的动态效果 end ------------
+
+
+onMounted(() => {
+  initInputField();
+  isMounted.value = true;
+});
+
+onMounted(async () => {
+  await configStore.init();
+  deviceId.value = configStore.getDeviceID();
+  WSURL.value!.value = configStore.getWSURL();
+  WSProxyURL.value!.value = configStore.getWSProxyURL();
+  tokenEnable.value = configStore.getTokenEnable();
+  token.value!.value = configStore.getToken();
+
+  await nextTick(() => {
+    connect();
+  });
+});
 </script>
 
 <template>
@@ -1422,8 +1417,6 @@ function updateAIWaveAnimation(audioLevel: number) {
     }
 
     /* 多层涟漪效果 */
-    .voice-avatar::before,
-    .voice-avatar::after,
     .voice-avatar .ripple-1,
     .voice-avatar .ripple-2,
     .voice-avatar .ripple-3 {
@@ -1438,6 +1431,7 @@ function updateAIWaveAnimation(audioLevel: number) {
       width: 100%;
       height: 100%;
       opacity: 0;
+      z-index: 1;
     }
 
     /* 小智头像的涟漪动画 */
@@ -1486,6 +1480,7 @@ function updateAIWaveAnimation(audioLevel: number) {
           object-fit: cover;
           border: 2px solid #fff;
           border-radius: 10%;
+          z-index: 2;
         }
       }
     }
