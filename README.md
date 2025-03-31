@@ -80,6 +80,12 @@ pip install -r requirements.txt
 python app.py
 ```
 
+### 浏览页面
+
+在自己电脑的浏览器中输入 `localhost:5173` 即可访问
+
+<img src="./images/页面展示.jpg" alt="页面展示" style="width: 100%;">
+
 ## 状态流转图
 
 ```
