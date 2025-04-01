@@ -3,7 +3,7 @@ import { defineStore } from 'pinia'
 
 export const useConfigStore = defineStore('config', () => {
   const WSURL = ref<string>("wss://api.tenclass.net/xiaozhi/v1/")
-  const WSProxyURL = ref<string>("")
+  const WSProxyURL = ref<string>("ws://localhost:5000")
   const tokenEnable = ref<boolean>(false)
   const token = ref<string>("")
   const sessionID = ref<string>("")

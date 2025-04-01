@@ -2,7 +2,7 @@
     "WS_URL": "wss://api.tenclass.net/xiaozhi/v1/",
     "TOKEN_ENABLE": true,
     "DEVICE_TOKEN": "test_token",
-    "PROXY_HOST": "0.0.0.0",
+    "PROXY_HOST": "localhost",
     "PROXY_PORT": "8000",
     "BACKEND_HOST": "localhost",
     "BACKEND_PORT": "8081"
