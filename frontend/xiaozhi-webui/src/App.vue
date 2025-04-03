@@ -345,8 +345,8 @@ let gainNode: GainNode;
 /**
  * 初始化音频分析器
  */ /**
- * 播放音频队列中的下一个音频
- */
+* 播放音频队列中的下一个音频
+*/
 const playNextAudio = (): void => {
   console.log("[App][playNextAudio] Audio List:", audioQueue.value);
   if (isPlaying) {
@@ -367,8 +367,8 @@ const playNextAudio = (): void => {
  * 停止播放音频，并清空队列，将播放状态设置为 false
  */
 const abortPlayingAndClean = (): void => {
-  audioContext.suspend();
   isPlaying = false;
+  nextPlayTime = 0;
   audioQueue.value = [];
 
   // 通知小智，你被打断了
@@ -513,6 +513,7 @@ const enqueueAudio = async (blob: Blob): Promise<void> => {
 const isPhoneCallPanelVisible = ref<boolean>(false);
 let audioStream: MediaStream | null = null;
 let processorNode: AudioWorkletNode | null = null;
+let userMediaNode: MediaStreamAudioSourceNode | null = null;
 let isRecording: boolean = false;
 let haveFirstSpoke: boolean = false;
 let lastAudioTime = 0;
@@ -527,105 +528,10 @@ const showPhoneCallPanel = async () => {
   }
   isPhoneCallPanelVisible.value = true;
 
-  // TODO: 开启用户声音监听
-  // 如果用户声音大于一定阈值，开始录音
-  // 开始录音后，如果用户声音小于一定阈值一段时间，停止录音
-
-  // 清除还未播放的音频
-  audioQueue.value = [];
-  isPlaying = false;
-  nextPlayTime = 0;
-
   // 保持 audioContext 为活跃状态
   if (audioContext.state === "suspended") {
     await audioContext.resume();
   }
-
-  // 加载音频处理脚本
-  await audioContext.audioWorklet.addModule(
-    "/src/utils/audio/audioProcessor.ts"
-  );
-  // console.log("[App][startRecording] New audioContext created:", audioContext);
-
-  // 初始化音频流
-  try {
-    audioStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: 16000,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    });
-    // console.log("[App][startRecording] UserMedia created:", audioStream);
-  } catch (err: unknown) {
-    console.log("[App][startRecording] Error getting user media:", err);
-  }
-
-  // 利用 MediaStream 创建音频源节点
-  const source = audioContext.createMediaStreamSource(audioStream!);
-
-  if (!processorNode) {
-    // 使用自定义的 audioContext 节点，用于后续处理音频数据
-    // https://developer.mozilla.org/zh-CN/docs/Web/API/AudioWorkletNode
-    processorNode = new AudioWorkletNode(audioContext, "audioProcessor", {
-      processorOptions: {
-        bufferSize: 960, // 16KHz 的采样频率下，60ms 包含的采样点个数
-      },
-    });
-    // console.log("[App][startRecording] AudioWorkletNode created:", processorNode);
-
-    // 建立音频节点连接
-    source.connect(processorNode);
-
-    // Web Audio API 需要形成完整的音频处理图才会工作
-    // 所以需要将 processorNode 连接到 audioContext 的输出节点
-    processorNode.connect(audioContext.destination);
-
-    // 添加错误监听
-    processorNode.onprocessorerror = (e) => {
-      console.error("Processor error:", e);
-    };
-
-    // （主线程）处理节点的出口回调函数，用于接收 process 函数处理后的音频数据
-    processorNode.port.onmessage = (e: MessageEvent) => {
-      if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
-        // TODO: 检测音量
-        // 开始说话就设置静音定时器，防抖
-        let audioLevel = 0;
-        if (e.data instanceof Float32Array) {
-          audioLevel = detectAudioLevel(e.data);
-        } else if (e.data.buffer) {
-          const audioData = new Float32Array(e.data.buffer);
-          audioLevel = detectAudioLevel(audioData);
-          ws.send(e.data.buffer);
-        }
-        if (audioLevel > 0.01 && !haveFirstSpoke) {
-          haveFirstSpoke = true;
-        }
-        if (haveFirstSpoke) {
-          if (audioLevel > 0.01 && e.data instanceof Float32Array) {
-            lastAudioTime = Date.now();
-            updateUserWaveAnimation(audioLevel);
-            ws.send(e.data);
-          } else if (audioLevel > 0.01 && e.data.buffer) {
-            lastAudioTime = Date.now();
-            updateUserWaveAnimation(audioLevel);
-            ws.send(e.data.buffer);
-          } else if (
-            audioLevel < 0.01 &&
-            Date.now() - lastAudioTime > SILENCE_TIMEOUT
-          ) {
-            stopRecording();
-          }
-        }
-      }
-    };
-  } else {
-    source.connect(processorNode);
-    processorNode.connect(audioContext.destination);
-  }
-
   await startRecording();
 };
 
@@ -643,7 +549,7 @@ const closePhoneCallPanel = async () => {
 };
 
 // 开始录音并发送音频数据
-function startRecording() {
+async function startRecording() {
   haveFirstSpoke = false;
   isRecording = true;
   lastAudioTime = Date.now();
@@ -659,14 +565,15 @@ function startRecording() {
     console.log("[App][startRecording] Sending start message:", startMessage);
   }
 
-  if (audioStream) {
-    audioStream.getTracks().forEach((track) => (track.enabled = true));
-  }
+  await prepareMediaResources();
+  await reconnectMediaResources();
 }
 
 // 停止录音
-function stopRecording() {
+async function stopRecording() {
   isRecording = false;
+  haveFirstSpoke = false;
+
   // 发送停止信号
   if (ws && ws.readyState === WebSocket.OPEN) {
     const stopMessage = JSON.stringify({
@@ -679,13 +586,7 @@ function stopRecording() {
   }
 
   // 停止资源
-  if (audioStream) {
-    audioStream.getTracks().forEach((track) => (track.enabled = false));
-  }
-  if (processorNode) {
-    processorNode.disconnect();
-    ws.send(JSON.stringify({ type: "reset" }));
-  }
+  await stopMediaResources();
 
   // 等待当前音频播放完成
   if (audioContext) {
@@ -724,23 +625,167 @@ function detectAudioLevel(audioData: Float32Array): number {
 
 onUnmounted(async () => {
   console.log("[App][onUnmounted] Clearing resources...");
+  await clearMediaResources();
+  isMounted.value = false;
+});
+
+// 初始化媒体资源
+const prepareMediaResources = async () => {
+  // 加载音频处理脚本
+  await audioContext.audioWorklet.addModule(
+    "/src/utils/audio/audioProcessor.ts"
+  );
+  // console.log("[App][startRecording] New audioContext created:", audioContext);
+
+  // 初始化音频流
+  if (!audioStream) {
+    try {
+      audioStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+        video: false,
+      });
+      // console.log("[App][startRecording] UserMedia created:", audioStream);
+
+      // 初始化用户媒体流节点
+      if (!userMediaNode) {
+        // 利用 MediaStream 创建音频源节点
+        userMediaNode = audioContext.createMediaStreamSource(audioStream);
+      }
+    } catch (err: unknown) {
+      console.log("[App][startRecording] Error getting user media:", err);
+    }
+  }
+
+  // 初始化音频处理节点
+  if (!processorNode) {
+    try {
+      // 使用自定义的 audioContext 节点，用于后续处理音频数据
+      // https://developer.mozilla.org/zh-CN/docs/Web/API/AudioWorkletNode
+      processorNode = new AudioWorkletNode(audioContext, "audioProcessor", {
+        processorOptions: {
+          bufferSize: 960, // 16KHz 的采样频率下，60ms 包含的采样点个数
+        },
+      });
+      // console.log("[App][startRecording] AudioWorkletNode created:", processorNode);
+
+      // 添加错误监听
+      processorNode.onprocessorerror = (e) => {
+        console.error("Processor error:", e);
+      };
+
+      // （主线程）处理节点的出口回调函数，用于接收 process 函数处理后的音频数据
+      processorNode.port.onmessage = (e: MessageEvent) => {
+        if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
+          console.log(
+            "[App][processorNode.port.onmessage] Audio data received."
+          );
+          // TODO: 检测音量
+          // 开始说话就设置静音定时器，防抖
+          let audioLevel = 0;
+          if (e.data instanceof Float32Array) {
+            audioLevel = detectAudioLevel(e.data);
+          } else if (e.data.buffer) {
+            const audioData = new Float32Array(e.data.buffer);
+            audioLevel = detectAudioLevel(audioData);
+            ws.send(e.data.buffer);
+          }
+          if (audioLevel > 0.01 && !haveFirstSpoke) {
+            haveFirstSpoke = true;
+          }
+          if (haveFirstSpoke) {
+            if (audioLevel > 0.01 && e.data instanceof Float32Array) {
+              lastAudioTime = Date.now();
+              updateUserWaveAnimation(audioLevel);
+              ws.send(e.data);
+            } else if (audioLevel > 0.01 && e.data.buffer) {
+              lastAudioTime = Date.now();
+              updateUserWaveAnimation(audioLevel);
+              ws.send(e.data.buffer);
+            } else if (
+              audioLevel < 0.01 &&
+              Date.now() - lastAudioTime > SILENCE_TIMEOUT
+            ) {
+              stopRecording();
+            }
+          }
+        }
+      };
+    } catch (err: unknown) {
+      console.log(
+        "[App][startRecording] Error creating AudioWorkletNode:",
+        err
+      );
+    }
+  }
+};
+
+// 重新连接媒体资源
+const reconnectMediaResources = async () => {
+  if (!audioStream || !userMediaNode || !processorNode) {
+    console.log("[App][reconnectMediaResources] Resources not ready.");
+    return;
+  }
+
+  // 建立音频节点连接
+  userMediaNode.connect(processorNode);
+
+  // 启用音频流
+  audioStream.getTracks().forEach((track) => (track.enabled = true));
+
+  // Web Audio API 需要形成完整的音频处理图才会工作
+  // 所以需要将 processorNode 连接到 audioContext 的输出节点
+  processorNode.connect(audioContext.destination);
+};
+
+// 终止媒体资源
+const stopMediaResources = async () => {
+  if (userMediaNode) {
+    userMediaNode.disconnect();
+    console.log("[App][stopMediaResources] userMediaNode disconnected");
+  }
+  if (audioStream) {
+    audioStream.getTracks().forEach((track) => (track.enabled = false));
+    console.log("[App][stopMediaResources] audioStream tracks disabled");
+  }
+  if (processorNode) {
+    processorNode.disconnect();
+    console.log("[App][stopMediaResources] processorNode disconnected");
+    ws.send(JSON.stringify({ type: "reset" }));
+  }
+};
+
+// 清除媒体资源
+const clearMediaResources = async () => {
+  audioQueue.value = [];
+  isRecording = false;
+  isPlaying = false;
+
+  if (audioStream) {
+    audioStream.getTracks().forEach((track) => track.stop());
+    audioStream = null;
+    console.log("[App][clearMediaResources] audioStream is null");
+  }
+  if (userMediaNode) {
+    userMediaNode.disconnect();
+    userMediaNode = null;
+    console.log("[App][clearMediaResources] userMediaNode is null");
+  }
   if (processorNode) {
     processorNode.port.onmessage = null;
     processorNode.disconnect();
     processorNode = null;
-  }
-  if (audioStream) {
-    audioStream.getTracks().forEach((track) => track.stop());
-    audioStream = null;
+    console.log("[App][clearMediaResources] processorNode is null");
   }
   if (audioContext) {
-    audioQueue.value = [];
-    isRecording = false;
-    isPlaying = false;
     await audioContext.close();
+    console.log("[App][clearMediaResources] audioContext is null");
   }
-  isMounted.value = false;
-});
+};
 // ---------- 语音通话 end ----------------
 
 // ---------- 对话的动态效果 start ----------
@@ -799,7 +844,6 @@ function updateAIWaveAnimation(audioLevel: number) {
 }
 // ---------- 对话的动态效果 end ------------
 
-
 onMounted(() => {
   initInputField();
   isMounted.value = true;
@@ -825,36 +869,17 @@ onMounted(async () => {
     <div class="header-container">
       <span class="title">小智AI</span>
       <button class="setting" @click="showSettingPanel">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          class="h-6 w-6"
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-        >
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
-          />
-          <path
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            stroke-width="2"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-          />
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+            d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
         </svg>
       </button>
     </div>
 
     <!-- 状态栏 -->
     <div class="status-container">
-      <div
-        v-if="isMounted"
-        class="connection-status disconnected"
-        ref="connectionState"
-      >
+      <div v-if="isMounted" class="connection-status disconnected" ref="connectionState">
         {{ connectionStateText }}
       </div>
       <div class="device-id">设备ID：{{ deviceId }}</div>
@@ -865,37 +890,19 @@ onMounted(async () => {
 
     <!-- 输入区域 -->
     <div class="input-field">
-      <div
-        id="messageInput"
-        tabindex="0"
-        contenteditable="true"
-        type="text"
-        ref="messageInput"
-        @keydown="handleKeyPress"
-        placeholder="请输入消息..."
-      ></div>
+      <div id="messageInput" tabindex="0" contenteditable="true" type="text" ref="messageInput"
+        @keydown="handleKeyPress" placeholder="请输入消息..."></div>
       <button id="send-message" @click="sendMessage">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
-          <path
-            fill-rule="evenodd"
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd"
             d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 1.414L10.586 9H7a1 1 0 100 2h3.586l-1.293 1.293a1 1 0 101.414 1.414l3-3a1 1 0 000-1.414z"
-            clip-rule="evenodd"
-          />
+            clip-rule="evenodd" />
         </svg>
       </button>
       <button id="phone-call" @click="showPhoneCallPanel">
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 20 20"
-          fill="currentColor"
-        >
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
           <path
-            d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z"
-          />
+            d="M2 3a1 1 0 011-1h2.153a1 1 0 01.986.836l.74 4.435a1 1 0 01-.54 1.06l-1.548.773a11.037 11.037 0 006.105 6.105l.774-1.548a1 1 0 011.059-.54l4.435.74a1 1 0 01.836.986V17a1 1 0 01-1 1h-2C7.82 18 2 12.18 2 5V3z" />
         </svg>
       </button>
     </div>
@@ -906,44 +913,25 @@ onMounted(async () => {
         <h2>设置</h2>
         <div style="display: flex; flex-direction: column">
           <label>远程服务器地址</label>
-          <input
-            type="text"
-            placeholder="例如: wss://api.domain.cn/xiaozhi/v1/"
-            ref="WSURL"
-          />
+          <input type="text" placeholder="例如: wss://api.domain.cn/xiaozhi/v1/" ref="WSURL" />
         </div>
         <div style="display: flex; flex-direction: column">
           <label>本地代理地址</label>
-          <input
-            type="text"
-            placeholder="例如: ws://localhost:5000"
-            ref="WSProxyURL"
-          />
+          <input type="text" placeholder="例如: ws://localhost:5000" ref="WSProxyURL" />
         </div>
         <div style="display: flex; flex-direction: column">
-          <div
-            style="
+          <div style="
               display: flex;
               justify-content: space-between;
               align-items: center;
-            "
-          >
+            ">
             <label>Token 设置</label>
             <label class="toggle-switch">
-              <input
-                type="checkbox"
-                :checked="tokenEnable"
-                @click="tokenEnable = !tokenEnable"
-              />
+              <input type="checkbox" :checked="tokenEnable" @click="tokenEnable = !tokenEnable" />
               <span class="toggle-slider"></span>
             </label>
           </div>
-          <input
-            type="text"
-            placeholder="开启后将在连接时携带 Token"
-            ref="token"
-            :disabled="!tokenEnable"
-          />
+          <input type="text" placeholder="开启后将在连接时携带 Token" ref="token" :disabled="!tokenEnable" />
         </div>
       </div>
       <div class="bottom-buttons">
@@ -953,10 +941,7 @@ onMounted(async () => {
     </div>
 
     <!-- 语音通话界面 -->
-    <div
-      class="phone-call-container"
-      :class="{ active: isPhoneCallPanelVisible }"
-    >
+    <div class="phone-call-container" :class="{ active: isPhoneCallPanelVisible }">
       <div class="voice-avatar-container">
         <div class="voice-avatar" ref="voiceAvatar">
           <div class="ripple-1"></div>
@@ -1051,6 +1036,7 @@ onMounted(async () => {
         word-break: break-word;
         max-width: 89%;
       }
+
       .message-time {
         color: #9ca3af;
         font-size: 0.75rem;
@@ -1060,6 +1046,7 @@ onMounted(async () => {
 
     .message.server {
       margin: 0.5rem 0;
+
       .message-content {
         background-color: #fff;
         border: 1px solid #e5e7eb;
@@ -1071,12 +1058,14 @@ onMounted(async () => {
 
     .message.user {
       margin: 0.5rem 0;
+
       .message-content {
         background-color: var(--primary-color);
         border-radius: 1rem 1rem 5px 1rem;
         color: white;
         margin-left: auto;
       }
+
       .message-time {
         text-align: right;
       }
@@ -1172,8 +1161,10 @@ onMounted(async () => {
       overflow-y: auto;
       scrollbar-width: none;
 
-      white-space: pre-wrap; /* 换行 */
-      text-overflow: ellipsis; /* 当内容溢出时显示省略号 */
+      white-space: pre-wrap;
+      /* 换行 */
+      text-overflow: ellipsis;
+      /* 当内容溢出时显示省略号 */
       cursor: text;
 
       &:focus {
@@ -1275,11 +1266,11 @@ onMounted(async () => {
         box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
       }
 
-      input:checked + .toggle-slider {
+      input:checked+.toggle-slider {
         background-color: #34c759;
       }
 
-      input:checked + .toggle-slider:before {
+      input:checked+.toggle-slider:before {
         transform: translateX(20px);
       }
     }
@@ -1338,6 +1329,7 @@ onMounted(async () => {
       justify-content: center;
       align-items: center;
       padding-bottom: 3rem;
+
       img {
         width: 5rem;
         height: 5rem;
@@ -1367,11 +1359,9 @@ onMounted(async () => {
 
         .wave-line {
           width: 5px;
-          background: linear-gradient(
-            180deg,
-            rgba(255, 64, 129, 0.8) 0%,
-            rgba(255, 121, 176, 0.6) 100%
-          );
+          background: linear-gradient(180deg,
+              rgba(255, 64, 129, 0.8) 0%,
+              rgba(255, 121, 176, 0.6) 100%);
           border-radius: 4px;
           height: 3px;
           transition: height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
@@ -1385,30 +1375,39 @@ onMounted(async () => {
           &:nth-child(1) {
             animation-delay: -0.4s;
           }
+
           &:nth-child(2) {
             animation-delay: -0.3s;
           }
+
           &:nth-child(3) {
             animation-delay: -0.2s;
           }
+
           &:nth-child(4) {
             animation-delay: -0.1s;
           }
+
           &:nth-child(5) {
             animation-delay: 0s;
           }
+
           &:nth-child(6) {
             animation-delay: -0.1s;
           }
+
           &:nth-child(7) {
             animation-delay: -0.2s;
           }
+
           &:nth-child(8) {
             animation-delay: -0.3s;
           }
+
           &:nth-child(9) {
             animation-delay: -0.4s;
           }
+
           &:nth-child(10) {
             animation-delay: -0.5s;
           }
@@ -1493,9 +1492,11 @@ onMounted(async () => {
     transform: translate(-50%, -50%) scale(1);
     opacity: 0.8;
   }
+
   50% {
     opacity: 0.4;
   }
+
   100% {
     transform: translate(-50%, -50%) scale(2);
     opacity: 0;
@@ -1508,10 +1509,12 @@ onMounted(async () => {
     height: 2px;
     opacity: 0.6;
   }
+
   50% {
     height: var(--wave-height, 24px);
     opacity: 0.8;
   }
+
   100% {
     height: 2px;
     opacity: 0.6;
