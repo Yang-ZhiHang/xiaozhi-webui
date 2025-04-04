@@ -20,6 +20,8 @@ class AudioProcessor extends AudioWorkletProcessor {
 
     // 处理节点的内部逻辑
     process(inputs: Float32Array[][]): boolean {
+        // inputs[0] 代表第一个输入通道
+        // inputs[0][0] 代表第一个输入通道的第一个声道（单声道音频）
         const input = inputs[0][0];
         if (!input) return true;
 

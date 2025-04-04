@@ -492,9 +492,7 @@ const playBlob = async (audioBuffer: AudioBuffer) => {
 const enqueueAudio = async (blob: Blob): Promise<void> => {
   try {
     const arrayBuffer: ArrayBuffer = await blob.arrayBuffer();
-    const audioBuffer: AudioBuffer = await audioContext.decodeAudioData(
-      arrayBuffer
-    );
+    const audioBuffer: AudioBuffer = await audioContext.decodeAudioData(arrayBuffer);
     audioQueue.value.push(audioBuffer);
     if (!isPlaying) {
       playNextAudio();
@@ -678,7 +676,7 @@ const prepareMediaResources = async () => {
         console.error("Processor error:", e);
       };
 
-      // （主线程）处理节点的出口回调函数，用于接收 process 函数处理后的音频数据
+      // 处理节点的出口回调函数，用于接收 process 函数处理后的音频数据
       processorNode.port.onmessage = (e: MessageEvent) => {
         if (isRecording && ws && ws.readyState === WebSocket.OPEN) {
           console.log(
@@ -736,10 +734,6 @@ const reconnectMediaResources = async () => {
 
   // 启用音频流
   audioStream.getTracks().forEach((track) => (track.enabled = true));
-
-  // Web Audio API 需要形成完整的音频处理图才会工作
-  // 所以需要将 processorNode 连接到 audioContext 的输出节点
-  processorNode.connect(audioContext.destination);
 };
 
 // 终止媒体资源
