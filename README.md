@@ -6,6 +6,8 @@ xiaozhi-webui 是一个使用 Python + Vue3 实现的小智语音 Web 端，旨�
 
 本仓库使用 Vue3 对 [xiaozhi-web-client](https://github.com/TOM88812/xiaozhi-web-client) 进行重构，并在此基础上优化和拓展。
 
+小智美美滴头像取自 [小红书 @涂丫丫](http://xhslink.com/a/ZWjAcoOzvzq9)
+
 ## 功能特点
 
 - **文字聊天模式**：像微信好友一样聊天
@@ -136,11 +138,13 @@ python app.py
 
 欢迎提交 Issues 和 Pull Requests！
 
-## 感谢以下开源人员-排名不分前后
+## 感谢以下开源/分享人员-排名不分前后
 
 [Huang-junsen](https://github.com/Huang-junsen)
 
 [TOM88812](https://github.com/TOM88812)
+
+[小红书 @涂丫丫](http://xhslink.com/a/ZWjAcoOzvzq9)
 
 ## Star History
 
