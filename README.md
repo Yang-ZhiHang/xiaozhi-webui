@@ -141,3 +141,7 @@ python app.py
 [Huang-junsen](https://github.com/Huang-junsen)
 
 [TOM88812](https://github.com/TOM88812)
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=yang-zhihang/xiaozhi-webui&type=Date)](https://www.star-history.com/#yang-zhihang/xiaozhi-webui&Date)
