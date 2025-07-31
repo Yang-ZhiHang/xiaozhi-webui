@@ -63,6 +63,21 @@ const handleQuit = () => {
 </template>
 
 <style lang="less" scoped>
+
+input {
+  padding: 0.6rem 0.8rem;
+  outline: none;
+  border: none;
+  border: 1px solid #e5e7eb;
+  border-radius: 0.5rem;
+  transition: all 0.1s ease-in-out;
+
+  &:focus {
+    border-color: var(--primary-color);
+    box-shadow: var(--primary-neo-color) 0 0 0 2px;
+  }
+}
+
 .setting-panel {
     position: absolute;
     display: flex;

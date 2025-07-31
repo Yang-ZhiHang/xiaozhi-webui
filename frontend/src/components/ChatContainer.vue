@@ -4,11 +4,17 @@ import type { Message } from '@/types/message';
 
 const messages = ref<Message[]>([]);
 
+// 处理文本内容，去除结尾的，。标点符号
+const processText = (text: string): string => {
+    text = text.replace(/[，。]$/, '');
+    return text;
+};
+
 const appendMessage = (type: 'user' | 'ai', text: string) => {
     const now = new Date();
     messages.value.push({
         type,
-        content: text,
+        content: processText(text),
         time: now.toLocaleTimeString("zh-CN", {
             hour: "2-digit",
             minute: "2-digit",
