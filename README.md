@@ -116,6 +116,30 @@ uv run main.py
 
 <img src="./images/页面展示.jpg" alt="页面展示" style="width: 100%;">
 
+## 常见问题
+
+**1. WebSocket 连接错误**
+
+如果看到类似下面的报错：
+```
+BaseEventLoop.create_connection() got an unexpected keyword argument 'extra_headers'
+```
+
+- 确保使用正确版本的 `websockets` 库（建议 >=15.0.1）
+- 运行 `cd backend && uv sync` 重新安装依赖
+
+**2. 中文字符显示乱码**
+
+- 使用 PowerShell 或 Windows Terminal（推荐）
+- 在 CMD 中执行 `chcp 65001` 切换编码
+- 使用 VS Code 内置终端
+
+**3. 端口占用问题**
+
+- 前端默认端口：5173
+- 后端默认端口：5000
+- 如有冲突，请在配置文件中修改端口设置
+
 ## 项目实现框图
 
 ```
@@ -218,30 +242,6 @@ ai speak process
 - concurrently：同时运行前后端服务
 - TypeScript：类型安全
 - Less：CSS 预处理器
-
-## 常见问题
-
-**1. WebSocket 连接错误**
-
-如果看到类似下面的报错：
-```
-BaseEventLoop.create_connection() got an unexpected keyword argument 'extra_headers'
-```
-
-- 确保使用正确版本的 `websockets` 库（建议 >=15.0.1）
-- 运行 `cd backend && uv sync` 重新安装依赖
-
-**2. 中文字符显示乱码**
-
-- 使用 PowerShell 或 Windows Terminal（推荐）
-- 在 CMD 中执行 `chcp 65001` 切换编码
-- 使用 VS Code 内置终端
-
-**3. 端口占用问题**
-
-- 前端默认端口：5173
-- 后端默认端口：5000
-- 如有冲突，请在配置文件中修改端口设置
 
 ## 贡献
 
