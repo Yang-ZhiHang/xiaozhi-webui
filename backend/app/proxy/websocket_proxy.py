@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import websockets
 import json
 import numpy as np
@@ -37,6 +38,7 @@ class WebSocketProxy:
         self.is_first_audio: bool = True  # 用于判断是否创建 Wave 头信息
         self.total_samples: int = 0  # 跟踪总采样数
         self.audio_lock = asyncio.Lock()  # 保证音频按顺序发送
+        self.shutdown_event = asyncio.Event()  # 用于优雅退出
 
         self.headers = {
             "Device-Id": self.device_id,
@@ -155,33 +157,37 @@ class WebSocketProxy:
             logger.info(
                 f"正在创建新的客户端 websocket 连接: {websocket.remote_address}"
             )
+            # 使用正确的参数名称 additional_headers (websockets 11.0+)
             async with websockets.connect(
-                self.websocket_url, extra_headers=self.headers
+                self.websocket_url, additional_headers=self.headers
             ) as server_ws:
                 logger.info(f"已连接至 websocket 服务器，请求头: {self.headers}")
-
-                # 创建任务
-                client_to_server = asyncio.create_task(
-                    self.handle_client_messages(websocket, server_ws)
-                )
-                server_to_client = asyncio.create_task(
-                    self.handle_server_messages(server_ws, websocket)
-                )
-
-                # 等待任意一个任务完成
-                done, pending = await asyncio.wait(
-                    [client_to_server, server_to_client],
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-
-                # 取消其他任务
-                for task in pending:
-                    task.cancel()
+                await self._handle_proxy_communication(websocket, server_ws)
 
         except Exception as e:
             logger.error(f"代理失败: {e}")
         finally:
             logger.info("客户端连接关闭")
+
+    async def _handle_proxy_communication(self, websocket, server_ws):
+        """处理代理通信"""
+        # 创建任务
+        client_to_server = asyncio.create_task(
+            self.handle_client_messages(websocket, server_ws)
+        )
+        server_to_client = asyncio.create_task(
+            self.handle_server_messages(server_ws, websocket)
+        )
+
+        # 等待任意一个任务完成
+        done, pending = await asyncio.wait(
+            [client_to_server, server_to_client],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        # 取消其他任务
+        for task in pending:
+            task.cancel()
 
     async def handle_server_messages(self, server_ws, client_ws):
         """处理来自 WebSocket 服务器的消息"""
@@ -310,7 +316,29 @@ class WebSocketProxy:
 
     async def main(self):
         """启动代理服务器"""
-        async with websockets.serve(
-            self.proxy_handler, self.proxy_host, self.proxy_port
-        ):
-            await asyncio.Future()
+        # 设置信号处理器
+        def signal_handler():
+            logger.info("收到退出信号，开始优雅关闭代理服务器...")
+            self.shutdown_event.set()
+
+        # 在 Windows 和 Unix 系统上设置信号处理
+        if hasattr(signal, 'SIGTERM'):
+            signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
+        if hasattr(signal, 'SIGINT'):
+            signal.signal(signal.SIGINT, lambda s, f: signal_handler())
+
+        try:
+            logger.info(f"代理服务器启动在 {self.proxy_host}:{self.proxy_port}")
+            async with websockets.serve(
+                self.proxy_handler, self.proxy_host, self.proxy_port
+            ) as server:
+                # 等待关闭信号
+                await self.shutdown_event.wait()
+                logger.info("代理服务器正在关闭...")
+                
+        except asyncio.CancelledError:
+            logger.info("代理服务器被取消，正在退出...")
+        except Exception as e:
+            logger.error(f"代理服务器异常: {e}")
+        finally:
+            logger.info("代理服务器已关闭")

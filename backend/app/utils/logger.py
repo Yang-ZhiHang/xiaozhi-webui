@@ -5,10 +5,34 @@ from colorlog import ColoredFormatter
 from ..constant.file import BASE_DIR
 
 
+import os
+import sys
+from logging.handlers import RotatingFileHandler
+import logging
+from colorlog import ColoredFormatter
+from ..constant.file import BASE_DIR
+
+
 def setup_logging():
     """
     配置日志
     """
+    # Windows 控制台编码修复
+    if sys.platform == "win32":
+        # 设置控制台编码为 UTF-8
+        try:
+            # Python 3.7+ 支持
+            sys.stdout.reconfigure(encoding='utf-8')
+            sys.stderr.reconfigure(encoding='utf-8')
+        except AttributeError:
+            # 兼容较老版本
+            import codecs
+            sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+            sys.stderr = codecs.getwriter('utf-8')(sys.stderr.buffer, 'strict')
+        
+        # 设置环境变量确保正确的编码
+        os.environ['PYTHONIOENCODING'] = 'utf-8'
+    
     log_dir = os.path.join(BASE_DIR, "logs")
     os.makedirs(log_dir, exist_ok=True)
 
@@ -24,7 +48,7 @@ def setup_logging():
         root_logger.handlers.clear()
 
     # 创建控制台处理器
-    console_handler = logging.StreamHandler()
+    console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setLevel(logging.INFO)
 
     # 创建按文件大小分割的文件处理器
@@ -35,7 +59,10 @@ def setup_logging():
     setattr(file_handler, 'suffix', "%Y-%m-%d.log")
 
     # 创建格式化器
-    formatter = logging.Formatter("%(asctime)s [%(name)s] - %(levelname)s - %(message)s - %(processName)s")
+    formatter = logging.Formatter(
+        "%(asctime)s [%(name)s] - %(levelname)s - %(message)s - %(processName)s",
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 
     # 控制台颜色格式化器
     color_formatter = ColoredFormatter(
@@ -44,12 +71,13 @@ def setup_logging():
         "%(cyan)s%(processName)s%(reset)s",
         log_colors={
             "DEBUG": "cyan",
-            "INFO": "white",
+            "INFO": "white", 
             "WARNING": "yellow",
             "ERROR": "red",
             "CRITICAL": "red,bg_white",
         },
         secondary_log_colors={"asctime": {"green": "green"}, "name": {"blue": "blue"}},
+        datefmt='%Y-%m-%d %H:%M:%S'
     )
     console_handler.setFormatter(color_formatter)
     file_handler.setFormatter(formatter)

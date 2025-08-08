@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host",
+    "dev": "concurrently \"pnpm dev:frontend\" \"pnpm dev:backend\" --names \"web,api\" --prefix-colors \"cyan,yellow\"",
+    "dev:frontend": "vite --host",
+    "dev:backend": "cd backend && uv run main.py",
     "build": "run-p type-check \"build-only {@}\" --",
     "preview": "vite preview",
     "build-only": "vite build",
@@ -21,6 +23,7 @@
     "@types/node": "^22.13.9",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/tsconfig": "^0.7.0",
+    "concurrently": "^9.1.0",
     "element-plus": "^2.9.11",
     "npm-run-all2": "^7.0.2",
     "typescript": "~5.8.0",
