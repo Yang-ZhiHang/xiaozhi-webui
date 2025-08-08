@@ -64,6 +64,8 @@ uv sync
 cd ..
 ```
 
+> **注意**：如果遇到 WebSocket 连接问题，请确保使用兼容的 `websockets` 库版本。项目使用 `websockets>=15.0.1`。
+
 4. 同时启动前后端
 
 ```bash
@@ -213,6 +215,25 @@ ai speak process
 - concurrently：同时运行前后端服务
 - TypeScript：类型安全
 - Less：CSS 预处理器
+
+## 故障排除
+
+### 常见问题
+
+**1. WebSocket 连接错误**
+如果看到类似 `BaseEventLoop.create_connection() got an unexpected keyword argument 'extra_headers'` 的错误：
+- 确保使用正确版本的 `websockets` 库（建议 >=15.0.1）
+- 运行 `cd backend && uv sync` 重新安装依赖
+
+**2. 中文字符显示乱码**
+- 使用 PowerShell 或 Windows Terminal
+- 在 CMD 中执行 `chcp 65001` 切换编码
+- 使用 VS Code 内置终端
+
+**3. 端口占用问题**
+- 前端默认端口：5173
+- 后端默认端口：5000
+- 如有冲突，请在配置文件中修改端口设置
 
 ## 贡献
 
