@@ -13,10 +13,10 @@ import type {
 const settingStore = useSettingStore();
 
 // ---------- 语音对话配置 start --------------
-import { ChatStateManager } from "./services/ChatStateManager.ts";
-import { ChatEvent, ChatState } from "./types/chat.ts";
+import { ChatStateManager } from "./services/ChatStateManager";
+import { ChatEvent, ChatState } from "./types/chat";
 import { VoiceAnimationManager } from "./services/VoiceAnimationManager";
-import { AudioService } from "./services/AudioManager.ts";
+import { AudioService } from "./services/AudioManager";
 
 const voiceAnimationManager = new VoiceAnimationManager();
 const chatStateManager = new ChatStateManager({
@@ -57,7 +57,7 @@ chatStateManager.on(ChatEvent.AI_START_SPEAKING, () => {
 // ---------- 语音对话配置 end ----------------
 
 // ---------- WebSocket 配置 start ----------
-import { WebSocketService } from "./services/WebSocketManager.ts";
+import { WebSocketService } from "./services/WebSocketManager";
 const chatContainerRef = ref<InstanceType<typeof ChatContainer> | null>(null);
 const wsService = new WebSocketService({
   decodeAudioData: (arrayBuffer: ArrayBuffer) => audioService.decodeAudioData(arrayBuffer),
