@@ -1,4 +1,5 @@
 import asyncio
+import signal
 import websockets
 import json
 import numpy as np
@@ -37,6 +38,7 @@ class WebSocketProxy:
         self.is_first_audio: bool = True  # 用于判断是否创建 Wave 头信息
         self.total_samples: int = 0  # 跟踪总采样数
         self.audio_lock = asyncio.Lock()  # 保证音频按顺序发送
+        self.shutdown_event = asyncio.Event()  # 用于优雅退出
 
         self.headers = {
             "Device-Id": self.device_id,
@@ -310,7 +312,29 @@ class WebSocketProxy:
 
     async def main(self):
         """启动代理服务器"""
-        async with websockets.serve(
-            self.proxy_handler, self.proxy_host, self.proxy_port
-        ):
-            await asyncio.Future()
+        # 设置信号处理器
+        def signal_handler():
+            logger.info("收到退出信号，开始优雅关闭代理服务器...")
+            self.shutdown_event.set()
+
+        # 在 Windows 和 Unix 系统上设置信号处理
+        if hasattr(signal, 'SIGTERM'):
+            signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
+        if hasattr(signal, 'SIGINT'):
+            signal.signal(signal.SIGINT, lambda s, f: signal_handler())
+
+        try:
+            logger.info(f"代理服务器启动在 {self.proxy_host}:{self.proxy_port}")
+            async with websockets.serve(
+                self.proxy_handler, self.proxy_host, self.proxy_port
+            ) as server:
+                # 等待关闭信号
+                await self.shutdown_event.wait()
+                logger.info("代理服务器正在关闭...")
+                
+        except asyncio.CancelledError:
+            logger.info("代理服务器被取消，正在退出...")
+        except Exception as e:
+            logger.error(f"代理服务器异常: {e}")
+        finally:
+            logger.info("代理服务器已关闭")
