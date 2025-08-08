@@ -41,7 +41,7 @@
 
 ## 快速开始
 
-### 一键启动（推荐）
+### 方式一：一键启动（推荐）
 
 1. 克隆项目并进入目录
 
@@ -72,25 +72,26 @@ cd ..
 pnpm dev
 ```
 
-这将使用 `concurrently` 同时启动前端和后端服务，在终端中会看到带颜色区分的前后端日志输出。
+此命令将使用 `concurrently` 同时启动前后端服务，在终端可以看到带颜色区分的前后端日志输出。
 
 > **Windows 用户注意**：如果在控制台看到中文乱码，项目已自动配置 UTF-8 编码。如果仍有问题，请确保：
-> 1. 使用 PowerShell 或 Windows Terminal（推荐）
-> 2. 在 CMD 中手动执行 `chcp 65001` 切换到 UTF-8 编码
+> 1. 终端使用 PowerShell 或 Windows Terminal（推荐）
+> 2. 在 CMD 中手动执行 `chcp 65001` 命令切换到 UTF-8 编码
 > 3. 或使用 VS Code 内置终端
 
 > **停止服务**：使用 `Ctrl+C` 可以优雅地停止前后端服务，系统会自动清理所有进程和连接。
 
-### 分别启动
+### 方式二：分别启动
 
-如果你需要单独启动前端或后端：
+如果你需要单独启动前端或后端，可以使用以下命令：
 
-**只启动前端**
+
+**单独启动前端**
 ```bash
 pnpm dev:frontend
 ```
 
-**只启动后端**
+**单独启动后端**
 ```bash
 pnpm dev:backend
 ```
@@ -200,37 +201,44 @@ ai speak process
 ## 技术栈
 
 **前端**
+
 - 框架： Vue3 + TypeScript + Pinia
 - 构建工具：Vite
 - 包管理器：pnpm
 - UI 组件：Element Plus
-- Web API: WebSocket、Web Audio API、AudioWorklet
+- Web API：WebSocket、Web Audio API、AudioWorklet
 
 **后端**
-- Python 3.12+ + FastAPI
+
+- Python>=3.12 + FastAPI
 - 包管理器：uv
-- 协议：WebSocket
 
 **开发工具**
+
 - concurrently：同时运行前后端服务
 - TypeScript：类型安全
 - Less：CSS 预处理器
 
-## 故障排除
-
-### 常见问题
+## 常见问题
 
 **1. WebSocket 连接错误**
-如果看到类似 `BaseEventLoop.create_connection() got an unexpected keyword argument 'extra_headers'` 的错误：
+
+如果看到类似下面的报错：
+```
+BaseEventLoop.create_connection() got an unexpected keyword argument 'extra_headers'
+```
+
 - 确保使用正确版本的 `websockets` 库（建议 >=15.0.1）
 - 运行 `cd backend && uv sync` 重新安装依赖
 
 **2. 中文字符显示乱码**
-- 使用 PowerShell 或 Windows Terminal
+
+- 使用 PowerShell 或 Windows Terminal（推荐）
 - 在 CMD 中执行 `chcp 65001` 切换编码
 - 使用 VS Code 内置终端
 
 **3. 端口占用问题**
+
 - 前端默认端口：5173
 - 后端默认端口：5000
 - 如有冲突，请在配置文件中修改端口设置
