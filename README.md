@@ -35,53 +35,79 @@
 ## 系统要求
 - Python 3.9+
 - NodeJS 18+
+- pnpm (推荐) 或 npm
+- uv (Python 包管理器)
 - 支持的操作系统：Windows 10+、macOS 10.15+、Linux
 
 ## 快速开始
 
-### 前端
+### 一键启动（推荐）
 
-1. 进入项目目录
-
-```bash
-cd frontend
-```
-
-2. 安装依赖
+1. 克隆项目并进入目录
 
 ```bash
-npm install
+git clone https://github.com/kalicyh/xiaozhi-webui.git
+cd xiaozhi-webui
 ```
 
-3. 启动项目
+2. 安装前端依赖
 
 ```bash
-npm run dev
+pnpm install
 ```
 
-### 后端
-
-1. 进入项目目录
+3. 安装后端依赖
 
 ```bash
 cd backend
+uv sync
+cd ..
 ```
 
-2. 安装依赖
+4. 同时启动前后端
 
 ```bash
-pip install -r requirements.txt
+pnpm dev
 ```
 
-3. 启动项目
+这将使用 `concurrently` 同时启动前端和后端服务，在终端中会看到带颜色区分的前后端日志输出。
 
+> **Windows 用户注意**：如果在控制台看到中文乱码，项目已自动配置 UTF-8 编码。如果仍有问题，请确保：
+> 1. 使用 PowerShell 或 Windows Terminal（推荐）
+> 2. 在 CMD 中手动执行 `chcp 65001` 切换到 UTF-8 编码
+> 3. 或使用 VS Code 内置终端
+
+### 分别启动
+
+如果你需要单独启动前端或后端：
+
+**只启动前端**
 ```bash
-python main.py
+pnpm dev:frontend
+```
+
+**只启动后端**
+```bash
+pnpm dev:backend
+```
+
+**手动分别启动**
+
+前端：
+```bash
+pnpm install
+pnpm dev:frontend
+```
+
+后端：
+```bash
+cd backend
+uv run main.py
 ```
 
 ### 浏览页面
 
-在自己电脑的浏览器中输入 `localhost:5173` 即可访问
+在浏览器中访问 `http://localhost:5173` 即可使用
 
 <img src="./images/页面展示.jpg" alt="页面展示" style="width: 100%;">
 
@@ -137,25 +163,31 @@ ai speak process
 ## 项目结构
 
 ```
-├── backend
-│   ├── app
-│   |   ├── constant                    # 常量
-│   |   ├── libs                        # 工具
-│   |   ├── proxy                       # websocket 代理
-│   |   ├── router                      # 路由
+├── backend/                            # 后端目录
+│   ├── app/
+│   |   ├── constant/                   # 常量
+│   |   ├── proxy/                      # websocket 代理
+│   |   ├── router/                     # 路由
+│   |   ├── utils/                      # 工具函数
 │   │   └── config.py                   # 配置
-│   ├── main.py                         # 入口
-│   └── requirements.txt                # 包依赖
-├── frontend
-│   └── src
-│       ├── assets                      # 静态资源
-│       ├── components                  # 组件
-│       ├── services                    # 模块化服务
-│       ├── stores                      # 全局状态管理
-│       ├── types                       # 类型定义
-│       ├── utils                       # 工具
-│       ├── App.vue                     # 入口
-│       └── main.ts 
+│   ├── libs/                           # 第三方库文件
+│   ├── main.py                         # 后端入口
+│   ├── pyproject.toml                  # Python 项目配置
+│   └── uv.lock                         # Python 依赖锁定文件
+├── src/                                # 前端源码目录
+│   ├── assets/                         # 静态资源
+│   ├── components/                     # Vue 组件
+│   ├── services/                       # 模块化服务
+│   ├── stores/                         # 全局状态管理
+│   ├── types/                          # TypeScript 类型定义
+│   ├── App.vue                         # 前端入口组件
+│   └── main.ts                         # 前端入口文件
+├── public/                             # 公共静态资源
+├── images/                             # 项目展示图片
+├── package.json                        # 前端项目配置
+├── pnpm-lock.yaml                      # 前端依赖锁定文件
+├── vite.config.ts                      # Vite 配置
+├── tsconfig.json                       # TypeScript 配置
 ├── .gitignore
 ├── LICENSE
 └── README.md
@@ -164,12 +196,21 @@ ai speak process
 ## 技术栈
 
 **前端**
-- 框架： Vue3 + TS + Pinia
+- 框架： Vue3 + TypeScript + Pinia
+- 构建工具：Vite
+- 包管理器：pnpm
+- UI 组件：Element Plus
 - Web API: WebSocket、Web Audio API、AudioWorklet
 
 **后端**
-- Python 3.12.0 + FastAPI
-- WebSocket
+- Python 3.12+ + FastAPI
+- 包管理器：uv
+- 协议：WebSocket
+
+**开发工具**
+- concurrently：同时运行前后端服务
+- TypeScript：类型安全
+- Less：CSS 预处理器
 
 ## 贡献
 
