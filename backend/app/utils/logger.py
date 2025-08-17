@@ -3,14 +3,7 @@ from logging.handlers import RotatingFileHandler
 import logging
 from colorlog import ColoredFormatter
 from ..constant.file import BASE_DIR
-
-
-import os
 import sys
-from logging.handlers import RotatingFileHandler
-import logging
-from colorlog import ColoredFormatter
-from ..constant.file import BASE_DIR
 
 
 def setup_logging():
