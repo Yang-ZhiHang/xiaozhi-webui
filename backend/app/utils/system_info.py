@@ -1,84 +1,132 @@
-# https://github.com/huangjunsen0406/py-xiaozhi/blob/main/src/utils/opus_loader.py
-
 # 在导入 opuslib 之前处理 opus 动态库
 import ctypes
 import os
 import platform
 import shutil
 import sys
+from enum import Enum
 from pathlib import Path
+from typing import List, Tuple, Union, cast
+from ..constants import WORK_DIR
+
+# 获取日志记录器
 from .logger import get_logger
-from typing import List, Tuple
 
 logger = get_logger(__name__)
 
 
-# 平台和架构常量定义
-WINDOWS = "windows"
-MACOS = "darwin"
-LINUX = "linux"
-
-# 库文件信息
-LIB_INFO = {
-    WINDOWS: {"name": "opus.dll", "system_name": "opus"},
-    MACOS: {"name": "libopus.dylib", "system_name": "libopus.dylib"},
-    LINUX: {"name": "libopus.so", "system_name": ["libopus.so.0", "libopus.so"]},
-}
-
-# 目录结构定义 - 根据实际目录结构定义路径
-DIR_STRUCTURE = {
-    WINDOWS: {"arch": "x86_64", "path": "libs/win/x86_64"},
-    MACOS: {
-        "arch": {"arm": "arm64", "intel": "x64"},
-        "path": "libs/mac/{arch}",
-    },
-    LINUX: {
-        "arch": {"arm": "arm64", "intel": "x64"},
-        "path": "libs/linux/{arch}",
-    },
-}
+# 平台常量定义
+class PLATFORM(Enum):
+    WINDOWS = "windows"
+    MACOS = "darwin"
+    LINUX = "linux"
 
 
-def get_system_info():
+# 架构常量定义
+class ARCH(Enum):
+    WINDOWS = {"arm": "x64", "intel": "x64"}
+    MACOS = {"arm": "arm64", "intel": "x64"}
+    LINUX = {"arm": "arm64", "intel": "x64"}
+
+
+# 动态链接库路径常量定义
+class LIB_PATH(Enum):
+    WINDOWS = "libs/win/x64"
+    MACOS = "libs/mac/{arch}"
+    LINUX = "libs/linux/{arch}"
+
+
+# 动态链接库名称常量定义
+class LIB_INFO(Enum):
+    WINDOWS = {"name": "opus.dll", "system_name": ["opus"]}
+    MACOS = {"name": "libopus.dylib", "system_name": ["libopus.dylib"]}
+    LINUX = {"name": "libopus.so", "system_name": ["libopus.so.0", "libopus.so"]}
+
+
+def get_platform() -> PLATFORM:
+    system = platform.system().lower()
+    if system == "windows" or system.startswith("win"):
+        system = PLATFORM.WINDOWS
+    elif system == "darwin":
+        system = PLATFORM.MACOS
+    else:
+        system = PLATFORM.LINUX
+    return system
+
+
+def get_arch(system: PLATFORM) -> Tuple[str, str]:
+    architecture = platform.machine().lower()
+    is_arm = "arm" in architecture or "aarch64" in architecture
+    if system == PLATFORM.WINDOWS:
+        arch_name = ARCH.WINDOWS.value["arm" if is_arm else "intel"]
+    elif system == PLATFORM.MACOS:
+        arch_name = ARCH.MACOS.value["arm" if is_arm else "intel"]
+    else:
+        arch_name = ARCH.LINUX.value["arm" if is_arm else "intel"]
+    return architecture, arch_name
+
+
+def get_lib_path(system: PLATFORM, arch_name: str):
+    if system == PLATFORM.WINDOWS:
+        lib_name = LIB_PATH.WINDOWS.value
+    elif system == PLATFORM.MACOS:
+        lib_name = LIB_PATH.MACOS.value.format(arch=arch_name)
+    else:
+        lib_name = LIB_PATH.LINUX.value.format(arch=arch_name)
+    return lib_name
+
+
+def get_lib_name(system: PLATFORM, local: bool = True) -> Union[str, List[str]]:
+    """获取库名称.
+
+    Args:
+        system (PLATFORM): 平台
+        local (bool, optional): 是否获取本地名称(str), 默认为 True. 如果为 False, 则获取系统名称列表(List).
+
+    Returns:
+        str | List: 库名称
+    """
+    key = "name" if local else "system_name"
+    if system == PLATFORM.WINDOWS:
+        lib_name = LIB_INFO.WINDOWS.value[key]
+    elif system == PLATFORM.MACOS:
+        lib_name = LIB_INFO.MACOS.value[key]
+    else:
+        lib_name = LIB_INFO.LINUX.value[key]
+    return lib_name
+
+
+def get_system_info() -> Tuple[PLATFORM, str]:
     """
     获取当前系统信息.
     """
-    system = platform.system().lower()
-    architecture = platform.machine().lower()
-
     # 标准化系统名称
-    if system == "windows" or system.startswith("win"):
-        system = WINDOWS
-    elif system == "darwin":
-        system = MACOS
-    elif system.startswith("linux"):
-        system = LINUX
+    system = get_platform()
 
     # 标准化架构名称
-    is_arm = "arm" in architecture or "aarch64" in architecture
-
-    if system == MACOS:
-        arch_name = DIR_STRUCTURE[MACOS]["arch"]["arm" if is_arm else "intel"]
-    elif system == WINDOWS:
-        arch_name = DIR_STRUCTURE[WINDOWS]["arch"]
-    else:  # Linux
-        arch_name = DIR_STRUCTURE[LINUX]["arch"]["arm" if is_arm else "intel"]
+    _, arch_name = get_arch(system)
+    logger.info(f"检测到系统: {system}, 架构: {arch_name}")
 
     return system, arch_name
 
 
-def get_search_paths(system: str, arch_name: str):
+def get_search_paths(system: PLATFORM, arch_name: str) -> List[Tuple[str, str]]:
     """
     获取库文件搜索路径列表（使用统一的资源查找器）
     """
-    from ..constants import WORK_DIR
     from .finder import find_libs_dir
 
-    lib_name: str = LIB_INFO[system]["name"]
-    search_paths: List[Tuple[Path | str, str]] = []
+    lib_name = cast(str, get_lib_name(system))
+
+
+    search_paths: List[Tuple[str, str]] = []
 
     # 映射系统名称到目录名称
-    system_dir_map = {WINDOWS: "win", MACOS: "mac", LINUX: "linux"}
+    system_dir_map = {
+        PLATFORM.WINDOWS: "win",
+        PLATFORM.MACOS: "mac",
+        PLATFORM.LINUX: "linux",
+    }
 
     system_dir = system_dir_map.get(system)
 
@@ -113,18 +161,16 @@ def get_search_paths(system: str, arch_name: str):
     return search_paths
 
 
-def find_system_opus():
+def find_system_opus() -> str:
     """
     从系统路径查找opus库.
     """
     system, _ = get_system_info()
-    lib_path = None
+    lib_path = ""
 
     try:
         # 获取系统上opus库的名称
-        lib_names = LIB_INFO[system]["system_name"]
-        if not isinstance(lib_names, list):
-            lib_names = [lib_names]
+        lib_names = get_lib_name(system, False)
 
         # 尝试加载每个可能的名称
         for lib_name in lib_names:
@@ -158,7 +204,6 @@ def copy_opus_to_project(system_lib_path):
     """
     将系统库复制到项目目录.
     """
-    from constants import WORK_DIR
 
     system, arch_name = get_system_info()
 
@@ -167,24 +212,19 @@ def copy_opus_to_project(system_lib_path):
         return None
 
     try:
+        # 使用resource_finder获取项目根目录
         project_root = WORK_DIR
 
         # 获取目标目录路径 - 使用实际目录结构
-        if system == MACOS:
-            target_path = DIR_STRUCTURE[MACOS]["path"].format(arch=arch_name)
-        elif system == WINDOWS:
-            target_path = DIR_STRUCTURE[WINDOWS]["path"]
-        else:  # Linux
-            target_path = DIR_STRUCTURE[LINUX]["path"]
-
-        target_dir = project_root / target_path
+        target_path = get_lib_path(system, arch_name)
+        target_dir = os.path.join(project_root, target_path)
 
         # 创建目标目录(如果不存在)
-        target_dir.mkdir(parents=True, exist_ok=True)
+        os.makedirs(target_dir, exist_ok=True)
 
         # 确定目标文件名
-        lib_name = LIB_INFO[system]["name"]
-        target_file = target_dir / lib_name
+        lib_name = cast(str, get_lib_name(system))
+        target_file = os.path.join(target_dir, lib_name)
 
         # 复制文件
         shutil.copy2(system_lib_path, target_file)
@@ -197,7 +237,7 @@ def copy_opus_to_project(system_lib_path):
         return None
 
 
-def setup_opus():
+def setup_opus() -> bool:
     """
     设置opus动态库.
     """
@@ -214,8 +254,8 @@ def setup_opus():
     search_paths = get_search_paths(system, arch_name)
 
     # 查找本地库文件
-    lib_path = None
-    lib_dir = None
+    lib_path = ""
+    lib_dir = ""
 
     for dir_path, file_name in search_paths:
         full_path = os.path.join(dir_path, file_name)
@@ -226,7 +266,7 @@ def setup_opus():
             break
 
     # 如果本地没找到，尝试从系统查找
-    if lib_path is None:
+    if not lib_path:
         logger.warning("本地未找到opus库文件，尝试从系统路径加载")
         system_lib_path = find_system_opus()
 
@@ -252,7 +292,7 @@ def setup_opus():
             return False
 
     # Windows平台特殊处理
-    if system == WINDOWS and lib_dir:
+    if system == PLATFORM.WINDOWS and lib_dir:
         # 添加DLL搜索路径
         if hasattr(os, "add_dll_directory"):
             try:
@@ -279,7 +319,7 @@ def setup_opus():
         return False
 
 
-def _patch_find_library(lib_name, lib_path):
+def _patch_find_library(lib_name: str, lib_path: str):
     """
     修补ctypes.util.find_library函数.
     """

@@ -1,5 +1,4 @@
 from typing import Optional
-from pathlib import Path
 from ..constants import WORK_DIR
 import os
 from .logger import get_logger
