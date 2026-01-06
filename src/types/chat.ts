@@ -1,17 +1,16 @@
 import { VoiceAnimationManager } from '../services/VoiceAnimationManager';
 
+export enum Role {
+    USER = 'user',
+    AI = 'ai',
+}
+
 export enum ChatEvent {
     USER_START_SPEAKING = 'userStartSpeaking',
     USER_STOP_SPEAKING = 'userStopSpeaking',
     AI_START_SPEAKING = 'aiStartSpeaking',
     AI_STOP_SPEAKING = 'aiStopSpeaking',
 }
-
-export type ChatEventType =
-    | ChatEvent.USER_START_SPEAKING
-    | ChatEvent.USER_STOP_SPEAKING
-    | ChatEvent.AI_START_SPEAKING
-    | ChatEvent.AI_STOP_SPEAKING
 
 export type ChatEventHandler = (data?: any) => void;
 

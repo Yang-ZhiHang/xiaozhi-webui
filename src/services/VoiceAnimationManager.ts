@@ -3,8 +3,6 @@ import { computed, ref } from "vue";
 export class VoiceAnimationManager {
     private readonly maxWaveHeight: number = 24;
     private readonly minWaveHeight: number = 6;
-    private readonly maxAIScale: number = 1.05;
-    private readonly minAIScale: number = 1;
     private _avatarScale = ref<number>(1);
     private _voiceWaveHeight = ref<number>(0);
     readonly voiceWaveHeight = computed(() => this._voiceWaveHeight.value);

@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import type { WebSocketMessage } from '@/types/message'
 import type { WebSocketDependencies, WebSocketHandlers } from '@/types/websocket'
+import { error, log, warn } from '@/common/log'
 
 export class WebSocketService {
     private _connectionStatus = ref<'connected' | 'disconnected' | 'error'>('disconnected')
@@ -38,7 +39,7 @@ export class WebSocketService {
 
     public sendTextMessage(message: any): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn("[WebSocketService] Connection not ready")
+            warn("Connection not ready")
             return
         }
 
@@ -48,14 +49,14 @@ export class WebSocketService {
 
     public sendAudioMessage(data: Float32Array): void {
         if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-            console.warn("[WebSocketService] Connection not ready")
+            warn("Connection not ready")
             return
         }
         this.ws.send(data)
     }
 
     private handleOpen(): void {
-        console.log("[WebSocketService] Connected to server", this.deps.settingStore.wsProxyUrl)
+        log("Connected to server", this.deps.settingStore.wsProxyUrl)
         this._connectionStatus.value = "connected"
 
         // 发送 Hello 消息
@@ -64,16 +65,16 @@ export class WebSocketService {
     }
 
     private handleClose(event: CloseEvent): void {
-        console.log(`[WebSocketService] Connection closed: ${event.code} ${event.reason}`)
+        log(`Connection closed: ${event.code} ${event.reason}`)
         this._connectionStatus.value = "disconnected"
         this.deps.settingStore.sessionId = ""
         this.handlers.onDisconnect?.(event)
     }
 
-    private handleError(error: Event): void {
-        console.error("[WebSocketService] Error:", error)
+    private handleError(err: Event): void {
+        error(err)
         this._connectionStatus.value = "error"
-        this.handlers.onError?.(error)
+        this.handlers.onError?.(err)
     }
 
     private async handleMessage(event: MessageEvent<any>): Promise<void> {
@@ -86,7 +87,7 @@ export class WebSocketService {
                 await this.handleTextMessage(event.data)
             }
         } catch (e) {
-            console.error("[WebSocketService][handleMessage] Error processing message:", e)
+            error("Error processing message:", e)
         }
     }
 

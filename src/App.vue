@@ -1,20 +1,29 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from "vue";
 import { useSettingStore } from "./stores/setting";
-import type {
-  HelloResponse,
-  UserEcho,
-  AIResponse_Emotion,
-  AIResponse_Text,
+import {
+  type HelloResponse,
+  type UserEcho,
+  type AIResponse_Emotion,
+  type AIResponse_Text,
+  type WebSocketMessage,
   AbortMessage,
-  UserMessage
+  UserMessage,
 } from "./types/message";
+import { ElMessage, ElMessageBox } from "element-plus";
+import { error, log, warn } from "./common/log";
+import Header from "./components/Header/index.vue";
+import SettingPanel from "./components/Setting/index.vue";
+import VoiceCall from "./components/VoiceCall.vue";
+import InputField from "./components/InputField.vue";
+import ChatContainer from "./components/ChatContainer.vue";
+import { httpMatcher } from "./common/regex";
 
 const settingStore = useSettingStore();
 
 // ---------- 语音对话配置 start --------------
 import { ChatStateManager } from "./services/ChatStateManager";
-import { ChatEvent, ChatState } from "./types/chat";
+import { ChatEvent, ChatState, Role } from "./types/chat";
 import { VoiceAnimationManager } from "./services/VoiceAnimationManager";
 import { AudioService } from "./services/AudioManager";
 
@@ -25,7 +34,7 @@ const chatStateManager = new ChatStateManager({
     USER_INTERRUPT_AI: 0.1,
   },
   timeout: {
-    SILENCE: 1000
+    SILENCE: 1000,
   },
   callbacks: {
     sendAudioData(data: Float32Array) {
@@ -36,131 +45,124 @@ const chatStateManager = new ChatStateManager({
     },
     getSessionId() {
       return settingStore.sessionId;
-    }
+    },
   },
   voiceAnimationManager: voiceAnimationManager,
-})
+});
 const audioService = AudioService.getInstance();
 audioService.onQueueEmpty(() => {
   chatStateManager.setState(ChatState.IDLE);
-})
+});
 audioService.onProcess((audioLevel: number, audioData: Float32Array) => {
   chatStateManager.handleUserAudioLevel(audioLevel, audioData);
-})
+});
 chatStateManager.on(ChatEvent.USER_START_SPEAKING, async () => {
   audioService.stopPlaying();
   audioService.clearAudioQueue();
-})
+});
 chatStateManager.on(ChatEvent.AI_START_SPEAKING, () => {
   audioService.playAudio();
-})
+});
 // ---------- 语音对话配置 end ----------------
 
 // ---------- WebSocket 配置 start ----------
 import { WebSocketService } from "./services/WebSocketManager";
 const chatContainerRef = ref<InstanceType<typeof ChatContainer> | null>(null);
-const wsService = new WebSocketService({
-  decodeAudioData: (arrayBuffer: ArrayBuffer) => audioService.decodeAudioData(arrayBuffer),
-  settingStore: settingStore,
-},{
-  async onAudioMessage(audioBuffer) {
-    console.log("[WebSocketService][onAudioMessage] audio data received.");
-    switch (chatStateManager.currentState.value as ChatState) {
-      case ChatState.USER_SPEAKING:
-        console.warn("[WebSocketService][onAudioMessage] User is speaking, discarding audio data.");
-        audioService.enqueueAudio(audioBuffer);
-        break;
-      case ChatState.IDLE:
-        console.log("[WebSocketService][onAudioMessage] Audio is not playing, set ai speaking...");
-        audioService.enqueueAudio(audioBuffer);
-        chatStateManager.setState(ChatState.AI_SPEAKING);
-        break;
-      case ChatState.AI_SPEAKING:
-        console.log("[WebSocketService][onAudioMessage] AI is speaking, enqueuing audio data.");
-        audioService.enqueueAudio(audioBuffer);
-        break;
-      default:
-        console.error("[WebSocketService][onAudioMessage] Unknown state:", chatStateManager.currentState.value);
-    }
+const wsService = new WebSocketService(
+  {
+    decodeAudioData: (arrayBuffer: ArrayBuffer) =>
+      audioService.decodeAudioData(arrayBuffer),
+    settingStore: settingStore,
   },
-  async onTextMessage(message) {
-    console.log("[WebSocketService][onTextmessage] Text message received:", message);
+  {
+    async onAudioMessage(audioBuffer: AudioBuffer) {
+      log("Audio data received.");
+      switch (chatStateManager.currentState.value as ChatState) {
+        case ChatState.USER_SPEAKING:
+          warn("User is speaking, discarding audio data.");
+          audioService.enqueueAudio(audioBuffer);
+          break;
+        case ChatState.IDLE:
+          log("Audio is not playing, set ai speaking...");
+          audioService.enqueueAudio(audioBuffer);
+          chatStateManager.setState(ChatState.AI_SPEAKING);
+          break;
+        case ChatState.AI_SPEAKING:
+          log("AI is speaking, enqueuing audio data.");
+          audioService.enqueueAudio(audioBuffer);
+          break;
+        default:
+          error("Unknown state:", chatStateManager.currentState.value);
+      }
+    },
+    async onTextMessage(message: WebSocketMessage) {
+      log("Text message received:", message);
 
-    switch (message.type) {
-      case "hello":
-        const helloMessage = message as HelloResponse;
-        settingStore.sessionId = helloMessage.session_id!;
-        console.log("[WebSocketService][onTextmessage] Session ID:", helloMessage.session_id);
-        break;
+      switch (message.type) {
+        case "hello":
+          const helloMessage = message as HelloResponse;
+          settingStore.sessionId = helloMessage.session_id!;
+          log("Session ID:", helloMessage.session_id);
+          break;
 
-      case "stt":
-        const sttMessage = message as UserEcho;
-        if (sttMessage.text?.trim()) {
-          chatContainerRef.value?.appendMessage("user", sttMessage.text);
-        }
-        break;
+        case "stt":
+          const sttMessage = message as UserEcho;
+          if (sttMessage.text?.trim()) {
+            chatContainerRef.value?.appendMessage(Role.USER, sttMessage.text);
+          }
+          break;
 
-      case "llm":
-        const emotionMessage = message as AIResponse_Emotion;
-        if (emotionMessage.text?.trim()) {
-          chatContainerRef.value?.appendMessage("ai", emotionMessage.text);
-        }
-        break;
+        case "llm":
+          const emotionMessage = message as AIResponse_Emotion;
+          if (emotionMessage.text?.trim()) {
+            chatContainerRef.value?.appendMessage(Role.AI, emotionMessage.text);
+          }
+          break;
 
-      case "tts":
-        switch (message.state) {
-          case "start":
-            break;
-          case "sentence_start":
-            const textMessage = message as AIResponse_Text;
-            chatContainerRef.value?.appendMessage("ai", textMessage.text!);
-            break;
-          case "sentence_end":
-            break;
-        }
-        break;
-    }
-  },
-  onConnect() {
-    ElMessage.success("连接成功");
-  },
-  onDisconnect() {
-    ElMessage.error("连接已断开，正在尝试重连");
-    setTimeout(() => {
-      wsService.connect(settingStore.wsProxyUrl);
-    }, 3000);
+        case "tts":
+          switch (message.state) {
+            case "sentence_start":
+              const textMessage = message as AIResponse_Text;
+              const blackList = ["%"];
+              if (blackList.includes(textMessage.text.trim())) {
+                log("Received control message:", textMessage.text);
+                break;
+              }
+              chatContainerRef.value?.appendMessage(Role.AI, textMessage.text!);
+              break;
+            case "start":
+            case "sentence_end":
+              break;
+          }
+          break;
+      }
+    },
+    onConnect() {
+      ElMessage.success("连接成功");
+    },
+    onDisconnect() {
+      ElMessage.error("连接已断开，正在尝试重连");
+      setTimeout(() => {
+        wsService.connect(settingStore.wsProxyUrl);
+      }, 3000);
+    },
   }
-})
+);
 // ---------- WebSocket 配置 end ------------
 
-import Header from './components/Header/index.vue'
-import SettingPanel from './components/Setting/index.vue'
-import VoiceCall from "./components/VoiceCall.vue";
-import InputField from "./components/InputField.vue";
-import ChatContainer from './components/ChatContainer.vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
-
 const sendAbortMessage = () => {
-  const abortMessage: AbortMessage = {
-    type: "abort",
-    session_id: settingStore.sessionId,
-  };
-  wsService.sendTextMessage(abortMessage)
-}
+  const abortMessage = AbortMessage(settingStore.sessionId);
+  wsService.sendTextMessage(abortMessage);
+};
 
 const sendMessage = (text: string) => {
-  const textMessage: UserMessage = {
-    type: "listen",
-    state: "detect",
-    text: text,
-    source: "text",
-  };
+  const textMessage = UserMessage(text);
   if (chatStateManager.currentState.value == ChatState.AI_SPEAKING) {
     sendAbortMessage();
     audioService.clearAudioQueue();
   }
-  wsService.sendTextMessage(textMessage)
-}
+  wsService.sendTextMessage(textMessage);
+};
 
 const isVoiceCallVisible = ref<boolean>(false);
 
@@ -182,17 +184,21 @@ const closeVoiceCallPanel = async () => {
 
 const ensureBackendUrl = async () => {
   if (!settingStore.backendUrl) {
-    const { value: backendUrl } = await ElMessageBox.prompt('请输入本地服务器地址：', '提示', {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      inputValue: 'http://localhost:8081',
-      inputPattern: /^http(s?):\/\/.+/, 
-      inputErrorMessage: '请输入有效的服务器地址(http:// 或 https:// 开头)',
-    });
+    const { value: backendUrl } = await ElMessageBox.prompt(
+      "请输入本地服务器地址：",
+      "提示",
+      {
+        confirmButtonText: "确定",
+        cancelButtonText: "取消",
+        inputValue: "http://localhost:8081",
+        inputPattern: httpMatcher,
+        inputErrorMessage: "请输入有效的服务器地址(http:// 或 https:// 开头)",
+      }
+    );
     settingStore.backendUrl = backendUrl;
     ElMessage.success("后端服务器地址已保存");
   }
-}
+};
 
 onMounted(async () => {
   const loaded = settingStore.loadFromLocal();
@@ -203,18 +209,19 @@ onMounted(async () => {
   }
 
   await ensureBackendUrl();
+
   const fetchOk = await settingStore.fetchConfig();
-  if (fetchOk) {
-    settingStore.saveToLocal();
-    ElMessage.warning("未发现本地配置，默认配置已加载并缓存至本地");
-    wsService.connect(settingStore.wsProxyUrl);
-  } else {
+  if (!fetchOk) {
     ElMessage.error("连接失败，请检查服务器是否启动");
+    return;
   }
+  settingStore.saveToLocal();
+  ElMessage.warning("未发现本地配置，默认配置已加载并缓存至本地");
+  wsService.connect(settingStore.wsProxyUrl);
 });
 
 onUnmounted(() => {
-  console.log("[App][onUnmounted] Clearing resources...");
+  log("Clearing resources...");
   chatStateManager.destroy();
   audioService.clearMediaResources();
 });
@@ -224,16 +231,16 @@ onUnmounted(() => {
   <div class="app-container">
     <Header :connection-status="wsService.connectionStatus.value" />
     <ChatContainer class="chat-container" ref="chatContainerRef" />
-    <InputField 
-      @send-message="(text: string) => sendMessage(text)" 
+    <InputField
+      @send-message="(text: string) => sendMessage(text)"
       @phone-call-button-clicked="showVoiceCallPanel"
     />
     <SettingPanel />
-    <VoiceCall 
-      :voice-animation-manager="voiceAnimationManager" 
+    <VoiceCall
+      :voice-animation-manager="voiceAnimationManager"
       :chat-state-manager="chatStateManager"
-      :is-visible="isVoiceCallVisible" 
-      @on-shut-down="closeVoiceCallPanel" 
+      :is-visible="isVoiceCallVisible"
+      @on-shut-down="closeVoiceCallPanel"
     />
   </div>
 </template>

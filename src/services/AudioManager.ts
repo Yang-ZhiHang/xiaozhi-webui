@@ -1,3 +1,4 @@
+import { error, log, warn } from "@/common/log";
 import { ElMessage } from "element-plus";
 
 export class AudioService {
@@ -49,9 +50,9 @@ export class AudioService {
   public enqueueAudio = (audioBuffer: AudioBuffer) => {
     try {
       this._audioQueue.push(audioBuffer);
-      console.log("[AudioManager][enqueueAudio] Audio enqueued");
-    } catch (e) {
-      console.error("[AudioManager][enqueueAudio] Error:", e);
+      log("Audio enqueued");
+    } catch (err) {
+      error(err);
     }
   };
 
@@ -65,7 +66,7 @@ export class AudioService {
 
   public playAudio = async () => {
     if (this._audioQueue.length === 0) {
-      console.log("[AudioManager][playAudio] Audio queue is empty.");
+      log("Audio queue is empty.");
       this._onQueueEmpty?.();
       return;
     }
@@ -94,19 +95,19 @@ export class AudioService {
   private loadAudioWorklet = async () => {
     // 加载音频处理脚本
     if (!this._audioContext.audioWorklet) {
-      console.warn("[AudioManager][prepareMediaResources] AudioWorklet is not supported in this browser.");
-      throw new Error("浏览器不支持 AudioWorklet");
+      warn("AudioWorklet is not supported in this browser.");
+      throw new Error("您的浏览器暂不支持音频通话功能");
     }
     await this._audioContext.audioWorklet.addModule(
       "/audioProcessor.js"
     );
-    console.log("[AudioManager][prepareMediaResources] Audio processor loaded.")
+    log("Audio processor loaded.");
   }
 
   private initAudioStream = async () => {
     // 初始化音频流
     if (!navigator.mediaDevices) {
-      console.warn("[AudioManager][prepareMediaResources] MediaDevices API is not supported in this browser.");
+      warn("MediaDevices API is not supported in this browser.");
       throw new Error("浏览器不支持 userMedia");
     }
     this._audioStream = await navigator.mediaDevices.getUserMedia({
@@ -118,10 +119,10 @@ export class AudioService {
       },
       video: false,
     }).catch((err: unknown) => {
-      console.log("[AudioManager][startRecording] Error getting user media:", err);
+      log("Error getting user media:", err);
       return null;
     });
-    console.log("[AudioManager][startRecording] UserMedia created:", this._audioStream);
+    log("UserMedia created:", this._audioStream);
   }
 
   private initUserMediaNode = () => {
@@ -129,7 +130,7 @@ export class AudioService {
     // 利用 MediaStream 创建音频源节点
     if (this._audioStream) {
       this._userMediaNode = this._audioContext.createMediaStreamSource(this._audioStream);
-      console.log("[AudioManager][prepareMediaResources] userMediaNode created:", this._userMediaNode);
+      log("UserMediaNode created:", this._userMediaNode);
     }
   }
 
@@ -139,7 +140,7 @@ export class AudioService {
     // https://developer.mozilla.org/zh-CN/docs/Web/API/AudioWorkletNode
     this._processorNode = new AudioWorkletNode(this._audioContext, "audioProcessor", {
       processorOptions: {
-        bufferSize: 960, // 16KHz 的采样频率下，60ms 包含的采样点个数
+        bufferSize: 960, // 16kHz 的采样频率下，60ms 包含的采样点个数
       },
     });
 
@@ -150,6 +151,7 @@ export class AudioService {
         return;
       }
       const audioLevel = this.detectAudioLevel(e.data);
+      // 此处不建议使用自定义的 log 工具，性能开销较大
       console.log("[AudioManager][processorNode.port.onmessage] Audio Level:", audioLevel.toFixed(2));
       this._onProcess?.(audioLevel, e.data);
     };
@@ -162,14 +164,13 @@ export class AudioService {
       await this.initAudioStream();
       this.initUserMediaNode();
       this.initProcessorNode();
-    } catch (error: unknown) {
-      console.error("[AudioManager][prepareMediaResources] Error:", error);
-      ElMessage.error(error as string);
+    } catch (err: any) {
+      ElMessage.error(err.message);
       return;
     }
 
     if (!this._audioStream || !this._userMediaNode || !this._processorNode) {
-      console.log("[AudioManager][connectMediaResources] Resources not ready.");
+      log("Resources not ready.");
       return;
     }
     this._userMediaNode.connect(this._processorNode);
@@ -177,28 +178,28 @@ export class AudioService {
 
     if (this._audioContext.state === "suspended") {
       await this._audioContext.resume();
-      console.log("[AudioManager][prepareMediaResources] AudioContext resumed.");
+      log("AudioContext resumed.");
     }
   };
 
   public stopAudioStream = () => {
     if (this._audioStream) {
       this._audioStream.getTracks().forEach((track) => track.enabled = false);
-      console.log("[AudioManager][stopAudioStream] Audio stream stopped.");
+      log("Audio stream stopped.");
     }
   }
 
   public stopUserMediaNode = () => {
     if (this._userMediaNode) {
       this._userMediaNode.disconnect();
-      console.log("[AudioManager][stopUserMediaNode] User media node stopped.");
+      log("User media node stopped.");
     }
   }
 
   public stopMediaResources = () => {
     this.stopAudioStream();
     this.stopUserMediaNode();
-    console.log("[AudioManager][stopMediaResources] Media resources stopped.");
+    log("Media resources stopped.");
   }
 
   public clearAudioQueue = () => {
@@ -209,7 +210,7 @@ export class AudioService {
     if (this._audioStream) {
       this._audioStream.getTracks().forEach((track) => track.stop());
       this._audioStream = null;
-      console.log("[AudioManager][clearMediaResources] this._audioStream closed");
+      log("AudioStream closed");
     }
   }
 
@@ -217,7 +218,7 @@ export class AudioService {
     if (this._userMediaNode) {
       this._userMediaNode.disconnect();
       this._userMediaNode = null;
-      console.log("[AudioManager][clearMediaResources] this._userMediaNode closed");
+      log("UserMediaNode closed");
     }
   }
 
@@ -226,7 +227,7 @@ export class AudioService {
       this._processorNode.port.onmessage = null;
       this._processorNode.disconnect();
       this._processorNode = null;
-      console.log("[AudioManager][clearMediaResources] this._processorNode closed");
+      log("ProcessorNode closed");
     }
   }
 

@@ -11,6 +11,9 @@ export type WebSocketMessage =
     | AIResponse_Emotion
     | AIResponse_Text
 
+// ==================================
+// 代理服务器的响应类型
+// ==================================
 export type HelloResponse = {
     type: 'hello'
     version: number
@@ -27,18 +30,6 @@ export type HelloResponse = {
 export type UserEcho = {
     type: 'stt'
     text: string
-    session_id: string
-}
-
-export type UserMessage = {
-    type: "listen",
-    state: "detect",
-    text: string,
-    source: "text",
-}
-
-export type AbortMessage = {
-    type: "abort"
     session_id: string
 }
 
@@ -63,14 +54,29 @@ export type AIResponse_Text = {
     session_id: string
 }
 
-export type AIListening_Start = {
-    type: "listen"
-    state: "start"
+// ==================================
+// 发送至代理服务器的消息
+// ==================================
+export let UserMessage = (content: string) => ({
+    type: "listen",
+    state: "detect",
+    text: content,
+    source: "text",
+})
+
+export let AbortMessage = (sid: string) => ({
+    type: "abort",
+    session_id: sid,
+})
+
+export let AIListening_Start = {
+    type: "listen",
+    state: "start",
     mode: "auto"
 }
 
-export type AIListening_Stop = {
-    type: "listen"
-    state: "stop"
+export let AIListening_Stop = {
+    type: "listen",
+    state: "stop",
     mode: "auto"
 }

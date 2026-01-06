@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue'
 import { defineStore } from 'pinia'
+import { log, warn, error } from '@/common/log'
 
 type ConfigData = {
 	[key: string]: string | boolean,
@@ -37,7 +38,7 @@ export const useSettingStore = defineStore('setting', () => {
 		try {
 			const response = await fetch(backendUrl.value + "/config")
 			const jsonData = await response.json()
-			console.log("[useSettingStore][fetchConfig] response: ", jsonData)
+			log("response: ", jsonData)
 			if (!response.ok) {
 				throw new Error("Failed to fetch config")
 			}
@@ -55,8 +56,8 @@ export const useSettingStore = defineStore('setting', () => {
 				}
 			})
 			return true;
-		} catch (error) {
-			console.error("[useSettingStore][fetchConfig]", error)
+		} catch (err) {
+			error(err)
 			return false;
 		}
 	}
@@ -71,7 +72,7 @@ export const useSettingStore = defineStore('setting', () => {
 			token: token.value,
 			device_id: deviceId.value
 		}
-		
+
 		// 通过标记切换字段必填需求，避免可选项为空时出现误判
 		const requiredWhenEnabled: Record<string, () => boolean> = {
 			token: () => tokenEnable.value,
@@ -84,9 +85,9 @@ export const useSettingStore = defineStore('setting', () => {
 
 		if (dataOK) {
 			localStorage.setItem('settings', JSON.stringify(configJson))
-			console.log("[useSettingStore][saveToLocal] 配置文件更新成功", configJson)
+			log("配置文件更新成功", configJson)
 		} else {
-			console.warn("[useSettingStore][saveToLocal] 配置文件数据不完整，未保存", configJson)
+			warn("配置文件数据不完整，未保存", configJson)
 		}
 		return dataOK
 	}
@@ -103,16 +104,16 @@ export const useSettingStore = defineStore('setting', () => {
 		const localConfig = localStorage.getItem('settings')
 		if (localConfig) {
 			updateConfig(JSON.parse(localConfig))
-			console.log("[useSettingStore][loadFromLocal] 配置文件加载成功")
+			log("配置文件加载成功")
 			return true
 		}
-		console.log("[useSettingStore][loadFromLocal] 配置文件不存在")
+		log("配置文件不存在")
 		return false
 	}
 
 	const destoryLocal = () => {
 		localStorage.removeItem('settings')
-		console.log("[useSettingStore][destoryLocal] 本地缓存配置文件已删除")
+		log("本地缓存配置文件已删除")
 	}
 
 	return {
