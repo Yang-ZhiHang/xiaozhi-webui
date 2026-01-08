@@ -5,10 +5,10 @@ import json
 import numpy as np
 import requests
 from ..utils.device import get_mac_address, get_local_ip
-from ..utils.logger import get_logger
 from ..utils.audio import pcm_to_opus, decoder, AudioProcessor
+from logging import getLogger
 
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 
 class WebSocketProxy:
@@ -23,14 +23,14 @@ class WebSocketProxy:
         token_enable: bool,
         token: str,
     ):
-        self.device_id= device_id
-        self.client_id= client_id
-        self.websocket_url= websocket_url
-        self.ota_version_url= ota_version_url
-        self.proxy_host= proxy_host
-        self.proxy_port= proxy_port
-        self.token_enable= token_enable
-        self.token= token
+        self.device_id = device_id
+        self.client_id = client_id
+        self.websocket_url = websocket_url
+        self.ota_version_url = ota_version_url
+        self.proxy_host = proxy_host
+        self.proxy_port = proxy_port
+        self.token_enable = token_enable
+        self.token = token
 
         self.audio_processor = AudioProcessor(960)
         self.decoder = decoder
@@ -99,7 +99,9 @@ class WebSocketProxy:
 
             # 确保 MQTT 信息存在
             if "mqtt" in response_data:
-                logger.debug(f"MQTT 信息已更新:\n{json.dumps(response_data, indent=2, ensure_ascii=False)}")
+                logger.debug(
+                    f"MQTT 信息已更新:\n{json.dumps(response_data, indent=2, ensure_ascii=False)}"
+                )
                 return response_data["mqtt"]
             else:
                 logger.error(
@@ -316,26 +318,27 @@ class WebSocketProxy:
 
     async def main(self):
         """启动代理服务器"""
+
         # 设置信号处理器
         def signal_handler():
             logger.info("收到退出信号，开始优雅关闭代理服务器...")
             self.shutdown_event.set()
 
         # 在 Windows 和 Unix 系统上设置信号处理
-        if hasattr(signal, 'SIGTERM'):
+        if hasattr(signal, "SIGTERM"):
             signal.signal(signal.SIGTERM, lambda s, f: signal_handler())
-        if hasattr(signal, 'SIGINT'):
+        if hasattr(signal, "SIGINT"):
             signal.signal(signal.SIGINT, lambda s, f: signal_handler())
 
         try:
             logger.info(f"代理服务器启动在 {self.proxy_host}:{self.proxy_port}")
             async with websockets.serve(
                 self.proxy_handler, self.proxy_host, self.proxy_port
-            ) as server:
+            ):
                 # 等待关闭信号
                 await self.shutdown_event.wait()
                 logger.info("代理服务器正在关闭...")
-                
+
         except asyncio.CancelledError:
             logger.info("代理服务器被取消，正在退出...")
         except Exception as e:

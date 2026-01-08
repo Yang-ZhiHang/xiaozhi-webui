@@ -5,12 +5,12 @@ import { ElMessage } from "element-plus";
 const settingStore = useSettingStore();
 
 const handleQuit = () => {
-    settingStore.visible = false;
     const saveOK = settingStore.saveToLocal();
     if (!saveOK) {
         ElMessage.error("配置保存失败，请确认数据不为空");
         return;
     }
+    settingStore.visible = false;
     ElMessage.success("配置已保存");
 };
 </script>
@@ -20,24 +20,8 @@ const handleQuit = () => {
         <div class="setting-content">
             <h2>设置</h2>
             <div style="display: flex; flex-direction: column">
-                <label>OTA地址</label>
-                <input 
-                    v-model="settingStore.otaVersionUrl" 
-                    type="text"
-                    placeholder="例如: https://api.tenclass.net/xiaozhi/ota/" 
-                />
-            </div>
-            <div style="display: flex; flex-direction: column">
-                <label>远程服务器地址</label>
-                <input v-model="settingStore.wsUrl" type="text" placeholder="例如: wss://api.domain.cn/xiaozhi/v1/" />
-            </div>
-            <div style="display: flex; flex-direction: column">
                 <label>本地代理地址</label>
                 <input v-model="settingStore.wsProxyUrl" type="text" placeholder="例如: ws://localhost:5000" />
-            </div>
-            <div style="display: flex; flex-direction: column">
-                <label>本地服务器地址</label>
-                <input v-model="settingStore.backendUrl" type="text" placeholder="例如: http://localhost:8081" />
             </div>
             <div style="display: flex; flex-direction: column">
                 <div style="

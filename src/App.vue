@@ -17,7 +17,7 @@ import SettingPanel from "./components/Setting/index.vue";
 import VoiceCall from "./components/VoiceCall.vue";
 import InputField from "./components/InputField.vue";
 import ChatContainer from "./components/ChatContainer.vue";
-import { httpMatcher } from "./common/regex";
+import { wsMatcher } from "./common/regex";
 
 const settingStore = useSettingStore();
 
@@ -182,21 +182,21 @@ const closeVoiceCallPanel = async () => {
   audioService.stopMediaResources();
 };
 
-const ensureBackendUrl = async () => {
-  if (!settingStore.backendUrl) {
-    const { value: backendUrl } = await ElMessageBox.prompt(
-      "请输入本地服务器地址：",
+const ensureProxyUrl = async () => {
+  if (!settingStore.wsProxyUrl) {
+    const { value: wsProxyUrl } = await ElMessageBox.prompt(
+      "请输入代理服务器地址：",
       "提示",
       {
         confirmButtonText: "确定",
         cancelButtonText: "取消",
-        inputValue: "http://localhost:8081",
-        inputPattern: httpMatcher,
-        inputErrorMessage: "请输入有效的服务器地址(http:// 或 https:// 开头)",
+        inputValue: "ws://localhost:5000",
+        inputPattern: wsMatcher,
+        inputErrorMessage: "请输入有效的服务器地址(ws:// 或 wss:// 开头)",
       }
     );
-    settingStore.backendUrl = backendUrl;
-    ElMessage.success("后端服务器地址已保存");
+    settingStore.wsProxyUrl = wsProxyUrl;
+    ElMessage.success("代理服务器地址已保存");
   }
 };
 
@@ -208,13 +208,8 @@ onMounted(async () => {
     return;
   }
 
-  await ensureBackendUrl();
+  await ensureProxyUrl();
 
-  const fetchOk = await settingStore.fetchConfig();
-  if (!fetchOk) {
-    ElMessage.error("连接失败，请检查服务器是否启动");
-    return;
-  }
   settingStore.saveToLocal();
   ElMessage.warning("未发现本地配置，默认配置已加载并缓存至本地");
   wsService.connect(settingStore.wsProxyUrl);

@@ -2,9 +2,9 @@ import io
 import sys
 import wave
 import numpy as np
-from .logger import get_logger
+from logging import getLogger
 
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 try:
     import opuslib

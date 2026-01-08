@@ -7,12 +7,12 @@ import sys
 from enum import Enum
 from pathlib import Path
 from typing import List, Tuple, Union, cast
-from ..constants import WORK_DIR
+from app.constant.file import BASE_DIR
 
 # 获取日志记录器
-from .logger import get_logger
+from logging import getLogger
 
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 
 # 平台常量定义
@@ -118,7 +118,6 @@ def get_search_paths(system: PLATFORM, arch_name: str) -> List[Tuple[str, str]]:
 
     lib_name = cast(str, get_lib_name(system))
 
-
     search_paths: List[Tuple[str, str]] = []
 
     # 映射系统名称到目录名称
@@ -151,7 +150,7 @@ def get_search_paths(system: PLATFORM, arch_name: str) -> List[Tuple[str, str]]:
         logger.debug(f"添加通用libs目录: {general_libs_dir}")
 
     # 添加项目根目录作为最后的备选
-    project_root = WORK_DIR
+    project_root = BASE_DIR
     search_paths.append((project_root, lib_name))
 
     # 打印所有搜索路径，帮助调试
@@ -213,7 +212,7 @@ def copy_opus_to_project(system_lib_path):
 
     try:
         # 使用resource_finder获取项目根目录
-        project_root = WORK_DIR
+        project_root = BASE_DIR
 
         # 获取目标目录路径 - 使用实际目录结构
         target_path = get_lib_path(system, arch_name)

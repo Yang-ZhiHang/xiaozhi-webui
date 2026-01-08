@@ -1,8 +1,8 @@
 import uuid
 import socket
-from .logger import get_logger
+from logging import getLogger
 
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 
 def get_mac_address() -> str:

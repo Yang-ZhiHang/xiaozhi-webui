@@ -1,12 +1,10 @@
-import signal
-import sys
 from urllib.parse import urlparse
 from .websocket_proxy import WebSocketProxy
 from ..config import ConfigManager
-from ..utils.logger import get_logger
 import asyncio
+from logging import getLogger
 
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 
 def cleanup(process):
@@ -35,12 +33,12 @@ def run_proxy():
             proxy_host=urlparse(ws_proxy_url).hostname,
             proxy_port=urlparse(ws_proxy_url).port,
             token_enable=configuration.get_bool("TOKEN_ENABLE"),
-            token=configuration.get_str("DEVICE_TOKEN"),
+            token=configuration.get_str("TOKEN"),
         )
-        
+
         # 运行代理服务器
         asyncio.run(proxy.main())
-        
+
     except KeyboardInterrupt:
         logger.info("代理进程收到中断信号")
     except Exception as e:

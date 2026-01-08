@@ -1,10 +1,10 @@
 import os
-from .utils.logger import get_logger
 import json
 from .utils.device import get_client_id, get_mac_address
 from .constant.file import BASE_DIR
+from logging import getLogger
 
-logger = get_logger(__name__)
+logger = getLogger(__name__)
 
 
 class ConfigManager:
@@ -22,7 +22,6 @@ class ConfigManager:
             "OTA_VERSION_URL": "https://api.tenclass.net/xiaozhi/ota/",
             "TOKEN_ENABLE": True,
             "TOKEN": "test_token",
-            "BACKEND_URL": "http://0.0.0.0:8081",
         }
         self._config = {}
         self._init_config()
