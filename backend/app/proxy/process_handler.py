@@ -7,19 +7,6 @@ from logging import getLogger
 logger = getLogger(__name__)
 
 
-def cleanup(process):
-    """清理进程"""
-    if process and process.is_alive():
-        logger.info("正在关闭代理进程...")
-        process.terminate()
-        process.join(timeout=5)
-        if process.is_alive():
-            logger.warning("强制关闭代理进程")
-            process.kill()
-            process.join()
-        logger.info("代理进程已关闭")
-
-
 def run_proxy():
     """在单独的进程中运行代理服务器"""
     try:
@@ -43,5 +30,3 @@ def run_proxy():
         logger.info("代理进程收到中断信号")
     except Exception as e:
         logger.error(f"代理进程异常: {e}")
-    finally:
-        logger.info("代理进程退出")

@@ -124,7 +124,7 @@ const wsService = new WebSocketService(
             case "sentence_start":
               const textMessage = message as AIResponse_Text;
               const blackList = ["%"];
-              if (blackList.includes(textMessage.text.trim())) {
+              if (blackList.some(item => textMessage.text.trim().startsWith(item))) {
                 log("Received control message:", textMessage.text);
                 break;
               }
